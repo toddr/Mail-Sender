@@ -14,7 +14,7 @@ Version 0.5 :
  $sender->{'error'} : last error for this object.
  @Errors : a list of error messages.
  Several minor fixes.
- 
+
 Version 0.6 :
  fixed problems with Base64 encoding. Files are now read, encoded and
  sent in parts instead of whole at once. You may call SendEnc several
@@ -71,12 +71,12 @@ Version 0.7.05 - 25/1/19100
  only the list name/address in the headers. The fake_... may be whatever
  text you like, doesn't need to look like an address.
 
-Version 0.7.06 
+Version 0.7.06
  bugfix
- 
+
 Version 0.7.07 - 4/4/2001
  bugfix
- Fixed a stupid bug related to multipart messages (have you ever used one hash item 
+ Fixed a stupid bug related to multipart messages (have you ever used one hash item
  for two different purposes? I AM that stupid!)
 
 Version 0.7.08 - 4/10/2001
@@ -84,3 +84,13 @@ Version 0.7.08 - 4/10/2001
 
 Version 0.7.09 - 6/28/2001
  minor fixes
+
+Version 0.7.10
+ minor instalation related fixes
+
+Version 0.7.11
+ not public, beta only
+
+Version 0.7.12 - 2/18/2002
+ added debuging output
+ The problem with multiline responses from some SMTP servers (namely qmail) is solved.
