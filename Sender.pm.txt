@@ -1,0 +1,365 @@
+NAME
+    Mail::Sender - module for sending mails with attachments through
+    an SMTP server
+
+    Version 0.6.6
+
+SYNOPSIS
+     use Mail::Sender;
+     $sender = new Mail::Sender
+      {smtp => 'mail.yourdomain.com', from => 'your@address.com'};
+     $sender->MailFile({to => 'some@address.com',
+      subject => 'Here is the file',
+      msg => "I'm sending you the list you wanted.",
+      file => 'filename.txt'});
+
+DESCRIPTION
+    `Mail::Sender' provides an object oriented interface to sending
+    mails. It doesn't need any outer program. It connects to a mail
+    server directly from Perl, using Socket.
+
+    Sends mails directly from Perl through a socket connection.
+
+CONSTRUCTORS
+    `new Mail::Sender ([from [,replyto [,to [,smtp [,subject [,headers [,boundary]]]]]]])'
+    new Mail::Sender {[from => 'somebody@somewhere.com'] , [to => 'else@nowhere.com'] [...]}
+    . Prepares a sender. This doesn't start any connection to the
+      server. You have to use `$Sender-'Open> or `$Sender-
+      'OpenMultipart> to start talking to the server.
+
+      The parameters are used in subsequent calls to `$Sender-'Open>
+      and `$Sender-'OpenMultipart>. Each such call changes the saved
+      variables. You can set `smtp',`from' and other options here
+      and then use the info in all messages.
+
+       from      = the senders e-mail address
+
+       replyto   = the reply-to address
+
+       to        = the recipient's address(es)
+
+       cc        = address(es) to send a copy (carbon copy)
+
+       bcc       = address(es) to send a copy (blind carbon copy)
+                   these adresses will not be visible in the mail!
+
+       smtp      = the IP or domain addres of you SMTP (mail) server
+
+       subject   = the subject of the message
+
+       headers   = the additional headers
+
+       boundary  = the message boundary
+
+       return codes:
+        ref to a Mail::Sender object =  success
+        -1 = $smtphost unknown
+        -2 = socket() failed
+        -3 = connect() failed
+        -4 = service not available
+        -5 = unspecified communication error
+        -6 = local user $to unknown on host $smtp
+        -7 = transmission of message failed
+        -8 = argument $to empty
+        -9 = no message specified in call to MailMsg or MailFile
+        -10 = no file name specified in call to SendFile or MailFile
+        -11 = file not found
+        -12 = not available in singlepart mode
+         Mail::Sender::Error contains a textual description of last error.
+
+METHODS
+    `Open([from [, replyto [, to [, smtp [, subject [, headers]]]]]])'
+    Open({[from => "somebody@somewhere.com"] , [to => "else@nowhere.com"] [...]})
+    . Opens a new message. If some parameters are unspecified or empty,
+      it uses the parameters passed to the "`$Sender=new
+      Mail::Sender(...)'";
+
+      see `new Mail::Sender' for info about the parameters.
+
+    `OpenMultipart([from [, replyto [, to [, smtp [, subject [, headers [, boundary]]]]]]])'
+    OpenMultipart({[from => "somebody@somewhere.com"] , [to => "else@nowhere.com"] [...]})
+    . Opens a multipart message. If some parameters are unspecified or
+      empty, it uses the parameters passed to the `$Sender=new
+      Mail::Sender(...)'.
+
+      see `new Mail::Sender' for info about the parameters.
+
+    `MailMsg([from [, replyto [, to [, smtp [, subject [, headers]]]]]], message)'
+    MailMsg({[from => "somebody@somewhere.com"]
+                   [, to => "else@nowhere.com"] [...], msg => "Message"})
+    . Sends a message. If a mail in $sender is opened it gets closed and
+      a new mail is created and sent. $sender is then closed. If
+      some parameters are unspecified or empty, it uses the
+      parameters passed to the "`$Sender=new Mail::Sender(...)'";
+
+      see `new Mail::Sender' for info about the parameters.
+
+    `MailFile([from [, replyto [, to [, smtp [, subject [, headers]]]]]], message, file(s))'
+    MailFile({[from => "somebody@somewhere.com"]
+                   [, to => "else@nowhere.com"] [...],
+                   msg => "Message", file => "File"})
+    . Sends one or more files by mail. If a mail in $sender is opened it
+      gets closed and a new mail is created and sent. $sender is
+      then closed. If some parameters are unspecified or empty, it
+      uses the parameters passed to the "`$Sender=new
+      Mail::Sender(...)'";
+
+      The `file' parameter may be a "filename", a "list, of, file,
+      names" or a \@list of file names.
+
+      see `new Mail::Sender' for info about the parameters.
+
+    `Send(@strings)'
+      Prints the strings to the socket. Doesn't add any end-of-line
+      characters. You should use `\r\n' as the end-of-line.
+
+    `SendLine(@strings)'
+      Prints the strings to the socket. Add the end-of-line
+      character at the end.
+
+    `SendEnc(@strings)'
+      Prints the strings to the socket. Doesn't add any end-of-line
+      characters. You should use `\r\n' as the end-of-line. Encodes
+      the text using the selected encoding (Base64/Quoted-printable)
+
+    `SendLineEnc(@strings)'
+      Prints the strings to the socket. Add the end-of-line
+      character at the end. Encodes the text using the selected
+      encoding (Base64/Quoted-printable)
+
+      Do NOT mix up Send[Line][Ex] and Send[Line]Enc! SendEnc does
+      some buffering necessary for correct Base64 encoding, and Send
+      is not aware of that!
+
+      Ussage of Send[Line][Ex] in non 7BIT parts not recommended.
+      Using Send(encode_base64($string)) may, but may NOT work! In
+      particular if you use several such to create one part, the
+      data is very likely to get crippled.
+
+    `SendEx(@strings)'
+      Prints the strings to the socket. Doesn't add any end-of-line
+      characters. Changes all end-of-lines to `\r\n'.
+
+    `SendLineEx(@strings)'
+      Prints the strings to the socket. Doesn't add any end-of-line
+      characters. Changes all end-of-lines to `\r\n'.
+
+    Part( *description*, *ctype*, *encoding*, *disposition*, *autocode*);
+    Part( { [description => "desc"] , [ctype], [encoding], [disposition]});
+       Prints a part header for the multipart message.
+       The undef or empty variables are ignored.
+
+    description
+        The title for this part.
+
+    ctype
+        the content type (MIME type) of this part. May contain some
+        other parameters, such as charset or name.
+
+        Defaults to "application/octet-stream".
+
+    encoding
+        the encoding used for this part of message. Eg. Base64,
+        Uuencode, 7BIT ...
+
+        Defaults to "7BIT".
+
+    disposition
+        This parts disposition. Eg: 'attachment;
+        filename="send.pl"'.
+
+        Defaults to "attachment".
+
+    Body([charset [, encoding [, content-type]]]);
+      Sends the head of the multipart message body. You can specify
+      the charset and the encoding. Default is "US-
+      ASCII","7BIT",'text/plain'.
+
+      If you pass undef or zero as the parameter, this function uses
+      the default value:
+
+          Body(0,0,'text/html');
+
+    SendFile( *description*, *ctype*, *encoding*, *disposition*, *file*);
+    SendFile( { [description => "desc"] , [ctype => "ctype"], [encoding => "encoding"],
+                  [disposition => "disposition"], file => "file"});
+       Sends a file as a separate part of the mail mesage. Only in multipart mode.
+
+    description
+        The title for this part.
+
+    ctype
+        the content type (MIME type) of this part. May contain some
+        other parameters, such as charset or name.
+
+        Defaults to "application/octet-stream".
+
+    encoding
+        the encoding used for this part of message. Eg. Base64,
+        Uuencode, 7BIT ...
+
+        Defaults to "Base64".
+
+    disposition
+        This parts disposition. Eg: 'attachment;
+        filename="send.pl"'.
+
+        Defaults to "attachment".
+
+    file
+        The name of the file to send or a 'list, of, names' or a
+        ['reference','to','a','list','of','filenames']. Each file
+        will be sent as a separate part.
+
+    Close;
+      Close and send the mail. This method should be called
+      automaticaly when destructing the object, but you should call
+      it yourself just to be sure it gets called. And you should do
+      it as soon as posible to close the connection and free the
+      socket.
+
+      The mail is being sent to server, but is not processed by the
+      server till the sender object is closed!
+
+    Cancel;
+      Cancel an opened message.
+
+      SendFile and other methods may set $sender->{'error'}. In that
+      case "undef $sender" calls $sender->Cancel not $sender-
+      >Close!!!
+
+    @Mail::Sender::Errors
+      Contains the description of errors returned by functions in
+      Mail::Sender.
+
+      Ussage: @Mail::Sender::Errors[$sender->{error}]
+
+EXAMPLES
+     use Mail::Sender;
+     
+     #$sender = new Mail::Sender { from => 'somebody@somewhere.com',
+        smtp => 'ms.chipnet.cz', boundary => 'This-is-a-mail-boundary-435427'};
+     # # if you do not care about errors.
+     # # otherwise use
+     #
+     ref ($sender = new Mail::Sender { from => 'somebody@somewhere.com',
+           smtp => 'ms.chipnet.cz', boundary => 'This-is-a-mail-boundary-435427'})
+     or die "Error($sender) : $Mail::Sender::Error\n";
+     
+     $sender->Open({to => 'friend@other.com', subject => 'Hello dear friend'});
+     $sender->SendLine("How are you?");
+     $sender->SendLine;
+     $sender->Send(<<'*END*');
+     I've found these jokes.
+
+      Doctor, I feel like a pack of cards.
+      Sit down and I'll deal with you later.
+     
+      Doctor, I keep thinking I'm a dustbin.
+      Don't talk rubbish.
+     
+     Hope you like'em. Jenda
+     *END*
+     
+     $sender->Close;
+     
+     $sender->Open({to => 'mama@home.org, papa@work.com',
+                    cc => 'somebody@somewhere.com',
+                    subject => 'Sorry, I'll come later.'});
+     $sender->SendLine("I'm sorry, but due to a big load of work,
+        I'll come at 10pm at best.");
+     $sender->SendLine("\nHi, Jenda");
+     
+     $sender->Close;
+     
+     $sender->OpenMultipart({to => 'Perl-Win32-Users@activeware.foo',
+                             subject => 'Mail::Sender.pm - new module'});
+     $sender->Body;
+     $sender->Send(<<'*END*');
+     Here is a new module Mail::Sender.
+     It provides an object based interface to sending SMTP mails.
+     It uses a direct socket connection, so it doesn't need any
+     additionl program.
+     
+     Enjoy, Jenda
+     *END*
+     $sender->SendFile(
+      {description => 'Perl module Mail::Sender.pm',
+       ctype => 'application/x-zip-encoded',
+       encoding => 'Base64',
+       disposition => 'attachment; filename="Sender.zip"; type="ZIP archive"',
+       file => 'sender.zip'
+      });
+     $sender->Close;
+     
+     _END_
+
+    If everything you need is to send a simple message you may use:
+
+     use Mail::Sender;
+
+     ref ($sender = new Mail::Sender({from => 'somebody@somewhere.com',smtp
+     => 'ms.chipnet.cz'})) or die "$Mail::Sender::Error\n";
+
+     (ref ($sender->MailMsg({to =>'Jenda@Krynicky.cz', subject => 'this is a test',
+                             msg => "Hi Johnie.\nHow are you?"}))
+      and print "Mail sent OK."
+     )
+     or die "$Mail::Sender::Error\n";
+
+    If you want to attach some files:
+
+     use Mail::Sender;
+
+     ref ($sender = new Mail::Sender({from => 'somebody@somewhere.com',smtp
+     => 'mail.yourdomain.com'})) or die "$Mail::Sender::Error\n";
+
+     (ref ($sender->MailFile(
+      {to =>'you@address.com', subject => 'this is a test',
+       msg => "Hi Johnie.\nI'm sending you the pictures you wanted.",
+       file => 'image1.jpg,image2.jpg'
+      }))
+      and print "Mail sent OK."
+     )
+     or die "$Mail::Sender::Error\n";
+
+    If you want to send a HTML mail:
+
+     use Mail::Sender;
+     open IN, $htmlfile or die "Cannot open $htmlfile : $!\n";
+     $sender = new Mail::Sender {smtp => 'mail.yourdomain.com'};
+     $sender->Open({ from => 'your@address.com', to => 'other@address.com', subject => 'HTML test',
+            headers => "MIME-Version: 1.0\r\nContent-type: text/html\r\nContent-Transfer-Encoding: 7bit"
+     }) or die $Mail::Sender::Error,"\n";
+
+     while (<IN>) { $sender->Send($_) };
+     close IN;
+     $sender->Close();
+
+    DO NOT mix Open(Multipart)|Send(Line)(Ex)|Close with MailMsg or
+    MailFile. Both Send(Msg/File) close any Open-ed mail. Do not try
+    this:
+
+     $sender = new Mail::Sender ...;
+     $sender->OpenMultipart...;
+     $sender->Body;
+     $sender->Send("...");
+     $sender->MailFile({file => 'something.ext');
+     $sender->Close;
+
+    This WON'T work!!!
+
+DISCLAIMER
+    This module is based on SendMail.pm Version : 1.21 that appeared
+    in Perl-Win32-Users@activeware.com mailing list. I don't
+    remember the name of the poster and it's not mentioned in the
+    script. Thank you mr. `undef'.
+
+AUTHOR
+    Jan Krynicky <Jenda@Krynicky.cz>
+
+COPYRIGHT
+    Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights
+    reserved. This program is free software; you can redistribute it
+    and/or modify it under the same terms as Perl itself.
+
