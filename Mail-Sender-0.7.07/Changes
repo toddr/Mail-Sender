@@ -1,0 +1,80 @@
+Revision history for Perl extension Mail::Sender.
+
+I am sorry I did not keep track of the changes :-(
+
+Version 0.4 :
+ I added several methods for most common tasks.
+  MailMsg : Send a string as a mail by single call
+  MailFile : The same plus attached files
+  SendFile : Insert a file as a part of a multipart message
+  Send(Line)Enc : Automatic encoding (Base64,Quoted-Printable)
+
+Version 0.5 :
+ Cancel : cancel an Opened message.
+ $sender->{'error'} : last error for this object.
+ @Errors : a list of error messages.
+ Several minor fixes.
+ 
+Version 0.6 :
+ fixed problems with Base64 encoding. Files are now read, encoded and
+ sent in parts instead of whole at once. You may call SendEnc several
+ times in one part now.
+
+...
+
+Version 0.6.6 : Added support for CC: and BCC:.
+
+Version 0.6.9b : 7/19/1999 - BETA
+ Open(), MailMsg and MailFile accept ctype, and encoding parameters.
+
+ You have more options in Part() and Body(). It's possible to send HTML
+ mails with inlined images easily now.
+
+ Error -5 (Unspecified communication error) now includes the actual
+ error returned by the mail server.
+
+ Some more examples in the docs.
+
+ Mail::Sender now tries to guess the content type for attached files.
+
+ You may now create not only multipart/mixed but also multipart/related
+ or other messages.
+
+Version 0.7.00
+ Mail/Sender.config file may be used to set up default options for
+ new Mail::Sender. You may install a function that gets called for every
+ message.
+
+Version 0.7.01 - 12/9/1999
+ bugfix (qmail would not accept attachments)
+
+Version 0.7.02 - 8/1/19100
+ bugfix
+  Don't tell me I'm stuuupid, I know it. Ever tried to send en email
+  with a line consisting of only a single dot?
+
+Version 0.7.03 - 14/1/19100
+ bugfix
+  Don't tell me I'm stuuupid, I know it. As Jan Starzynski <jan@planet.de>
+  pointed out it ate the last character on each line in SendEx() (Used in SendFile)
+  under Unix. Oh well :-(
+
+Version 0.7.04 - 8/1/19100
+ bugfix
+  A fix only in the configuration script because of some unimportant
+  problems with PPM instalation. No change to the module itself.
+
+Version 0.7.05 - 25/1/19100
+ Added fake_from, fake_to and fake_cc options to
+ new/Open/OpenMultipart/MailMsg/MailFile.
+ This allows you to send a message to a list of people, while including
+ only the list name/address in the headers. The fake_... may be whatever
+ text you like, doesn't need to look like an address.
+
+Version 0.7.06 
+ bugfix
+ 
+Version 0.7.07 - 4/4/2001
+ bugfix
+ Fixed a stupid bug related to multipart messages (have you ever used one hash item 
+ for two different purposes? I AM that stupid!)

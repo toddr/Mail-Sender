@@ -1,0 +1,10 @@
+Mail-Sender-0.7.07 <0>
+Mail-Sender-0.7.07\Changes <2670>
+Mail-Sender-0.7.07\Config.PL <8040>
+Mail-Sender-0.7.07\Makefile.PL <564>
+Mail-Sender-0.7.07\MANIFEST <102>
+Mail-Sender-0.7.07\README <909>
+Mail-Sender-0.7.07\Sender.pm <46530>
+Mail-Sender-0.7.07\Sender.pm.html <28520>
+Mail-Sender-0.7.07\Sender.pm.txt <24693>
+Mail-Sender-0.7.07\test.pl <677>

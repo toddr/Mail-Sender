@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.06
+# Mail::Sender.pm version 0.7.07
 #
 # Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.06';
+$Mail::Sender::VERSION='0.7.07';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -138,7 +138,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.06
+Version 0.7.07
 
 =head1 SYNOPSIS
 
@@ -537,7 +537,7 @@ sub OpenMultipart {
  delete $self->{'error'};
  delete $self->{'encoding'};
  my %changed;
- $self->{'multipart'}=1;
+ $self->{'multipart'}='Mixed' unless $self->{'multipart'};
  $self->{'idcounter'} = 0;
 
  if (ref $_[0] eq 'HASH') {
@@ -741,7 +741,7 @@ sub MailFile {
   $desc=$hash->{description}; $haddesc = 1 if defined $desc;
   delete $hash->{description};
  } else {
-  $desc=pop if ($#_ >=2);
+  $desc=pop if ($#_ >=2); $haddesc = 1 if defined $desc;
   $file = pop;
   $msg = pop;
  }
@@ -773,7 +773,7 @@ sub MailFile {
   my $cnt;
   my $filename = basename $file;
   my $ctype = $self->{ctype} || GuessCType $filename;
-  my $encoding = $self->{ctype} || ($ctype =~ m#^text/# ? 'Quoted-printable' : 'BASE64');
+  my $encoding = $self->{encoding} || ($ctype =~ m#^text/# ? 'Quoted-printable' : 'BASE64');
 
   $desc = $filename unless (defined $haddesc);
 
@@ -786,7 +786,8 @@ sub MailFile {
 
   my $code = $self->{'code'};
 
-  open SENDFILE_4563, "<$file";binmode SENDFILE_4563;
+  open SENDFILE_4563, "<$file";
+  binmode SENDFILE_4563 unless $ctype =~ m#^text/# and $encoding =~ /Quoted[_\-]print/i;
   while (read SENDFILE_4563, $cnt, $chunksize) {
    $self->Send(&$code($cnt));
   }
@@ -923,7 +924,7 @@ sub SendEx {
 
  SendLineEx(@strings)
 
-Prints the strings to the socket. Doesn't add any end-of-line characters.
+Prints the strings to the socket. Adds an end-of-line character at the end.
 Changes all end-of-lines to C<\r\n>.
 
 =cut
@@ -1188,7 +1189,8 @@ sub SendFile {
     }
   }
   $self->SendLine;
-  open SENDFILE_4563, "<$file";binmode SENDFILE_4563;
+  open SENDFILE_4563, "<$file";
+  binmode SENDFILE_4563 unless $fctype =~ m#^text/# and $encoding =~ /Quoted[_\-]print/i;
   while (read SENDFILE_4563, $cnt, $chunksize) {
    $self->SendEx(&$code($cnt));
   }
