@@ -13,7 +13,21 @@ sub Ignore {
     exit;
 }
 
-print "\nSpecify defaults for Mail::Sender? (y/N) ";
+{
+ my $dir;
+ foreach $dir (@INC) {
+    if (-e $dir.'/Mail/Sender.config') {
+        print "You have already specified some defaults for Mail::Sender,
+They are saved in $dir/Mail/Sender.config.
+If you go on you will OVERWRITE the whole file!
+You'd better edit the file by hand.\n";
+        $new=' new';
+        last;
+    }
+ }
+}
+
+print "\nSpecify$new defaults for Mail::Sender? (y/N) ";
 $res = <STDIN>;
 exit unless $res =~ /^y$/i;
 

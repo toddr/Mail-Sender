@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.00
+# Mail::Sender.pm version 0.7.01
 #
 # Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.00';
+$Mail::Sender::VERSION='0.7.01';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -136,7 +136,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.00
+Version 0.7.01
 
 =head1 SYNOPSIS
 
@@ -879,7 +879,7 @@ sub SendEx {
  $s = $self->{'socket'};
  my $str;my @data = @_;
  foreach $str (@data) {
-  $str =~ s/\n/\r\n/;
+  $str =~ s/(?:\A|[^\r])\n/\r\n/sg;
  }
  print $s @data;
  return 1;
@@ -1163,7 +1163,7 @@ sub SendFile {
   $self->SendLine;
   open SENDFILE_4563, "<$file";binmode SENDFILE_4563;
   while (read SENDFILE_4563, $cnt, $chunksize) {
-   $self->Send(&$code($cnt));
+   $self->SendEx(&$code($cnt));
   }
 #  $self->Send("==\n");
   close SENDFILE_4563;

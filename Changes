@@ -45,3 +45,6 @@ Version 0.7.00
  new Mail::Sender. You may install a function that gets called for every
  message.
 
+Version 0.7.01 - 12/9/1999
+ bugfix (qmail would not accept attachments)
+
