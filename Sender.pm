@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.13
+# Mail::Sender.pm version 0.7.13.1
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION='0.7.13';
+$Mail::Sender::VERSION='0.7.13.1';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -255,7 +255,7 @@ sub NOFROMSPECIFIED {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.13
+Version 0.7.13.1
 
 =head1 SYNOPSIS
 
@@ -569,7 +569,7 @@ sub Open {
  if (!socket($s, AF_INET, SOCK_STREAM, $self->{'proto'})) {
    return $self->{'error'}=SOCKFAILED; }
 
- $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/); # Untaint
+ $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 
  $self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
  return $self->{'error'}=CONNFAILED unless connect($s, $self->{'sin'});
@@ -745,7 +745,7 @@ sub OpenMultipart {
  if (!socket($s, AF_INET, SOCK_STREAM, $self->{'proto'})) {
    return $self->{'error'}=SOCKFAILED; }
 
- $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/); # Untaint
+ $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 
  $self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
  return $self->{'error'}=CONNFAILED unless connect($s, $self->{'sin'});
@@ -1868,7 +1868,7 @@ and "SITE_HEADERS" from time to time. To see who's cheating.
  		ctype => 'application/x-zip-encoded',
  		encoding => 'Base64',
  		disposition => 'attachment; filename="Sender.zip"; type="ZIP archive"',
- 		file => 'W:\jenda\packages\Mail\Sender\Mail-Sender-0.7.13.tar.gz'
+ 		file => 'W:\jenda\packages\Mail\Sender\Mail-Sender-0.7.13.1.tar.gz'
  	})
  	->Close();
  } or print "Error sending mail: $Mail::Sender::Error\n";

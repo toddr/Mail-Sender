@@ -101,3 +101,7 @@ Version 0.7.13 - 3/13/2002
  public)
  Improved compatibility with some BSD versions (using sockaddr_in() instead of pack())
 
+Version 0.7.13.1 - 3/17/2002
+ very small and very important fix.
+ Don't tell me I'm stupid. I know it.
+ Pleae don't use 0.7.12 and 0.7.13
