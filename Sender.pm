@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.8.08
+# Mail::Sender.pm version 0.8.10
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.08';
+$Mail::Sender::VERSION = '0.8.10';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
@@ -62,7 +62,7 @@ BEGIN {
 }
 
 #local IP address and name
-my $local_name =  (gethostbyname 'localhost')[0];
+my $local_name =  $ENV{HOSTNAME} || $ENV{HTTP_HOST} || (gethostbyname 'localhost')[0];
 my $local_IP =  join('.',unpack('CCCC',(gethostbyname $local_name)[4]));
 
 #time diference to GMT - Windows will not set $ENV{'TZ'}, if you know a better way ...
@@ -74,17 +74,32 @@ my $GMTdiff;
 	my $diffdate = ($gm[4]*512*32 + $gm[3]*32 + $gm[2]) <=> ($local[4]*512*32 + $local[3]*32 + $local[2]); # I know there are 12 months and 365-366 days. Any bigger numbers work fine as well ;-)
 	if ($diffdate > 0) {$gm[0]+=24}
 	elsif ($diffdate < 0) {$local[0]+=24}
-	my $hourdiff = $gm[0]-$local[0];
+	my $hourdiff = $local[0]-$gm[0];
 	my $mindiff;
 	if (abs($gm[1]-$local[1])<5) {
 		$mindiff = 0
 	} elsif (abs(abs($gm[1]-$local[1])-30) <5) {
-		$mindiff = 30
+		if ($gm[1] < $local[1]) {
+			$mindiff = 30;
+		} else {
+			$mindiff = -30;
+		}
+		if ($hourdiff > 0 and $mindiff < 0) {
+			$mindiff = 30;
+			$hourdiff --;
+		} elsif ($hourdiff < 0 and $mindiff > 0) {
+			$mindiff = -30;
+			$hourdiff ++;
+		}
 	} elsif (abs(abs($gm[1]-$local[1])-60) <5) {
 		$mindiff = 0;
-		$hourdiff ++;
+		if ($hourdiff < 0) {
+			$hourdiff ++;
+		} else {
+			$hourdiff --;
+		}
 	}
-	$GMTdiff = ($hourdiff < 0 ? '+' : '-') . sprintf "%02d%02d", abs($hourdiff), $mindiff;
+	$GMTdiff = (($hourdiff < 0 || $mindiff < 0) ? '-' : '+') . sprintf "%02d%02d", abs($hourdiff), abs($mindiff);
 }
 ## you could also use this code by "John W. Krahn" <krahnj@acm.org>
 # use Time::Local
@@ -470,7 +485,7 @@ sub ALLRECIPIENTSBAD {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.08
+Version 0.8.10
 
 =head1 SYNOPSIS
 
@@ -842,7 +857,6 @@ sub initialize {
 
 		$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
 		if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
-
 		$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 	}
 
@@ -951,10 +965,10 @@ sub _prepare_addresses {
 	my ($self, $type) = @_;
 	if (ref $self->{$type}) {
 		$self->{$type.'_list'} = $self->{$type};
-		$self->{$type} = join ', ', $self->{$type.'_list'};
+		$self->{$type} = join ', ', @{$self->{$type.'_list'}};
 	} else {
 		$self->{$type} =~ s/\s+/ /g;
-		$self->{$type} =~ s/,,/,/g;
+		$self->{$type} =~ s/, ?,/,/g;
 		$self->{$type.'_list'} = [map {s/\s+$//;$_} $self->{$type} =~ /((?:[^"',]+|"[^"]*"|'[^']*')+)(?:,\s*|\s*$)/g];
 	}
 }
@@ -999,7 +1013,8 @@ sub Open {
 	delete $self->{'encoding'};
 	delete $self->{'messageid'};
 	my %changed;
-	$self->{'multipart'}=0;
+	$self->{'multipart'} = 0;
+	$self->{'_had_newline'} = 1;
 
 	if (ref $_[0] eq 'HASH') {
 		my $key;
@@ -1043,6 +1058,7 @@ sub Open {
 		$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
 		$self->{'smtp'} =~ s/\s+$//g;
 		$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+		if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 		$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 		if (exists $self->{'socket'}) {
 			my $s = $self->{'socket'};
@@ -1289,6 +1305,8 @@ sub OpenMultipart {
 		$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
 		$self->{'smtp'} =~ s/\s+$//g;
 		$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+		if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
+		$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 		if (exists $self->{'socket'}) {
 			my $s = $self->{'socket'};
 			close $s;
@@ -1565,13 +1583,13 @@ sub MailFile {
 	foreach $file (@files) {
 		my $cnt;
 		my $filename = basename $file;
-		my $ctype = $ctype || GuessCType $filename;
+		my $ctype = $ctype || GuessCType $filename, $file;
 		my $encoding = $encoding || ($ctype =~ m#^text/#i ? 'Quoted-printable' : 'Base64');
 
 		$desc = $filename unless (defined $haddesc);
 
 		$self->Part({encoding => $encoding,
-				   disposition => $self->{'disposition'},  #"attachment; filename=\"$filename\"",
+				   disposition => (defined $self->{'disposition'} ? $self->{'disposition'} : "attachment; filename=\"$filename\""),
 				   ctype => "$ctype; name=\"$filename\"; type=Unknown;" . (defined $charset ? "charset=$charset;" : ''),
 				   description => $desc});
 
@@ -1588,7 +1606,9 @@ sub MailFile {
 		my $mychunksize = $chunksize;
 		$mychunksize = $chunksize64 if defined $self->{'chunk_size'};
 		while (read $FH, $cnt, $mychunksize) {
-			print $s (&$code($cnt));
+			$cnt = &$code($cnt);
+			$cnt =~ s/^\.\././ unless $self->{'_had_newline'};
+			print $s $cnt;
 			$self->{'_had_newline'} = ($cnt =~ /[\n\r]$/);
 		}
 		close $FH;
@@ -1701,8 +1721,10 @@ sub SendEnc {
 			print $s (&$code($str));
 		}
 	} else {
+		my $encoded = &$code(join('',@_));
+		$encoded =~ s/^\.\././ unless $self->{'_had_newline'};
+		print $s $encoded;
 		$self->{'_had_newline'} = ($_[-1] =~ /[\n\r]$/);
-		print $s (&$code(join('',@_)));
 	}
 	return $self;
 }
@@ -1909,7 +1931,7 @@ sub Part {
 		$self->SendEnc($msg) if defined $msg;
 	}
 
-
+	$self->{'_had_newline'} = 1;
 	return $self;
 }
 
@@ -1998,6 +2020,13 @@ The name of the file to send or a 'list, of, names' or a
 ['reference','to','a','list','of','filenames']. Each file will be sent as
 a separate part.
 
+Please keep in mind that if you pass a string as this parameter the module
+will split it on commas! If your filenames may contain commas and you
+want to be sure they are sent correctly you have to use the reference to array
+format:
+
+	file => [ $filename],
+
 =item content_id
 
 The content id of the message part. Used in multipart/related.
@@ -2069,7 +2098,7 @@ sub SendFile {
 		$self->{'encoding'} = $encoding;
 		my $cnt='';
 		my $name =  basename $file;
-		my $fctype = $ctype ? $ctype : GuessCType $file;
+		my $fctype = $ctype ? $ctype : GuessCType $name, $file;
 		$self->{'ctype'} = $fctype;
 
 		$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
@@ -2152,7 +2181,7 @@ sub EndPart {
 	if ($self->{'_had_newline'}) {
 		$LN = '';
 	} else {
-		print $s "=" if $self->{'encoding'} =~ /Quoted[_\-]print/i; # make sure we do not add a newline
+		print $s "=" if !$self->{'bypass_outlook_bug'} and $self->{'encoding'} =~ /Quoted[_\-]print/i; # make sure we do not add a newline
 	}
 
 	$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
@@ -2303,6 +2332,7 @@ sub QueryAuthProtocols {
 			$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
 			$self->{'smtp'} =~ s/\s+$//g;
 			$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+			if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 			$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 		}
 	} elsif ($self =~ /::/) { # Mail::Sender->QueryAuthProtocols('the.server.com')
@@ -2371,6 +2401,7 @@ sub TestServer {
 			$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
 			$self->{'smtp'} =~ s/\s+$//g;
 			$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+			if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 			$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 		}
 		$self->{'on_errors'} = 'die';
@@ -2546,15 +2577,16 @@ sub GetHandle {
 
 =head2 GuessCType
 
-	$ctype = GuessCType $filename;
+	$ctype = GuessCType $filename, $filepath;
 
-Guesses the content type based on the filename (actually ... the extension).
+Guesses the content type based on the filename or the file contents.
 This function is used when you attach a file and do not specify the content type.
 It is not exported by default!
 
+The builtin version uses the filename extension to guess the type.
 Currently there are only a few extensions defined, you may add other extensions this way:
 
-	$Mail::Sender::CTypes{'ext'} = 'content/type';
+	$Mail::Sender::CTypes{'EXT'} = 'content/type';
 	...
 
 The extension has to be in UPPERCASE and will be matched case sensitively.
@@ -3220,13 +3252,38 @@ If you use a different charset ('iso-8859-2', 'win-1250', ...) you will of cours
 to specify that charset. If you are not sure, try to send a mail with some other mail client
 and then look at the message/part headers.
 
-=head2 Sometimes there is an equals sign at the end of the message or attached file when
+=head2 Sometimes there is an equals sign at the end of an attached file when
 I open the email in Outlook. What's wrong?
 
-Outlook is. It has (had) a bug in it's quoted printable decoding routines.
+Outlook is. It has (had) a bug in its quoted printable decoding routines.
 This problem happens only in quoted-printable encoded parts on multipart messages.
 And only if the data in that part do not end with a newline. (This is new in 0.8.08, in older versions
 it happened in all QP encoded parts.)
+
+The problem is that an equals sign at the end of a line in a quoted printable encoded text means
+"ignore the newline". That is
+
+	fooo sdfg sdfg sdfh dfh =
+	dfsgdsfg
+
+should be decoded as
+
+	fooo sdfg sdfg sdfh dfh dfsgdsfg
+
+The problem is at the very end of a file. The part boundary (text separating different
+parts of a multipart message) has to start on a new line, if the attached file ends by a newline everything is cool.
+If it doesn't I need to add a newline and to denote that the newline is not part of the original file I add an equals:
+
+	dfgd dsfgh dfh dfh dfhdfhdfhdfgh
+	this is the last line.=
+	--message-boundary-146464--
+
+Otherwise I'd add a newline at the end of the file.
+If you do not care about the newline and want to be sure Outlook doesn't add the equals to the file add
+
+	bypass_outlook_bug => 1
+
+parameter to C<new Mail::Sender> or C<Open>/C<OpenMultipart>.
 
 =head2 WARNING
 

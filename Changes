@@ -152,3 +152,22 @@ Version 0.8.08
 	- added TestServer method/function
 	- improved handling of the last newline in quoted-printable encoded parts
 	  (the Outlook problem with = appearing at the end of attached files)
+
+Version 0.8.09
+	- private
+
+Version 0.8.10
+	- use
+		$ENV{HOSTNAME} || $ENV{HTTP_HOST}
+	  in preference to
+		(gethostbyname 'localhost')[0]
+	  as the local name if none is specified by the user
+	- fixed half-hour timezone handling
+	- fixed
+		to => [list, of, addresses]
+	  handling
+	- fixed "incorrect server name" handling (previous versions did not
+	  report the problem correctly in all cases
+	- untaining the IP address of the SMTP server in all cases
+	- fixed a problem that caused rare doubling of dots in quoted-printable encoded parts.
+	- various doc improvements
