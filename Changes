@@ -135,3 +135,9 @@ Version 0.8.04 - 01/08/2003
 
 Version 0.8.05 - 03/01/2003
  - new Mail::Sender ({..., die_on_errors => 1});
+
+Version 0.8.06 - 03/24/2003
+ - new Mail::Sender ({..., on_errors => 'die'});
+ - new Mail::Sender ({..., on_errors => 'undef'});
+ - new Mail::Sender ({..., on_errors => 'code'});
+ - A small fix for an issue with nested parts on the courier-imap server (whatever it is).

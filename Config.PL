@@ -167,22 +167,38 @@ Default FROM value (must be perl code / ENTER for none):
 *END*
 print "\t: ";
 $default{from}=<STDIN>;
-chomp $default{from};delete $default{from} unless $default{from};
+for ($default{from}) {
+	chomp;
+	$_ = "'$_'" if /^[\w\d.-]+@(?:[\w\d-]+\.)*[\w\d]+$/;
+}
+delete $default{from} unless $default{from};
 
 print "\n*********************************************************************\n";
 print "Default for REPLY-TO field (must be perl code / ENTER for none):\n\n\t: ";
 $default{replyto}=<STDIN>;
-chomp $default{replyto};delete $default{replyto} unless $default{replyto};
+for ($default{replyto}) {
+	chomp;
+	$_ = "'$_'" if /^[\w\d.-]+@(?:[\w\d-]+\.)*[\w\d]+$/;
+}
+delete $default{replyto} unless $default{replyto};
 
 print "\n*********************************************************************\n";
 print "Default for CC field (must be perl code / ENTER for none):\n\n\t: ";
 $default{cc}=<STDIN>;
-chomp $default{cc};delete $default{cc} unless $default{cc};
+for ($default{cc}) {
+	chomp;
+	$_ = "'$_'" if /^[\w\d.-]+@(?:[\w\d-]+\.)*[\w\d]+$/;
+}
+delete $default{cc} unless $default{cc};
 
 print "\n*********************************************************************\n";
 print "Default for BCC field (must be perl code / ENTER for none):\n\n\t: ";
 $default{bcc}=<STDIN>;
-chomp $default{bcc};delete $default{bcc} unless $default{bcc};
+for ($default{bcc}) {
+	chomp;
+	$_ = "'$_'" if /^[\w\d.-]+@(?:[\w\d-]+\.)*[\w\d]+$/;
+}
+delete $default{bcc} unless $default{bcc};
 
 print "\n*********************************************************************\n";
 print "Default name of the client MACHINE used when connecting\nto the SMTP server (must be perl code / ENTER for none):\n\n\t: ";

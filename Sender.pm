@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.8.05
+# Mail::Sender.pm version 0.8.06
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.05';
+$Mail::Sender::VERSION = '0.8.06';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
@@ -460,7 +460,7 @@ sub UNKNOWNAUTH {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.05
+Version 0.8.06
 
 =head1 SYNOPSIS
 
@@ -686,10 +686,19 @@ OpenMultipart, MailMsg or MailFile with the "smtp" parameter.
 This means that if you want the object to keep the connection you should pass the "smtp" either to "new Mail::Sender"
 or only to the first Open, OpenMultipart, MailMsg or MailFile!
 
-=item die_on_errors
+=item	on_errors
 
-If set to true value Mail::Sender doesn't return a negative error code, but throws an exception containing
-the message. $Mail::Sender::Error, $sender->{'error'} and $self->{'error_msg'} is set as usual.
+This option allows you to affect the way Mail::Sender reports errors.
+
+	=> 'die' - raise an exception
+	=> 'code' - return the negative error code (default)
+	=> 'undef' - return an undef
+
+$Mail::Sender::Error, $sender->{'error'} and $sender->{'error_msg'} are set in all the cases.
+
+All methods return the $sender object if they succeed.
+
+P.S.: The die_on_errors option is deprecated. You may still use it, but it may be removed in future versions!
 
 =back
 
@@ -873,8 +882,13 @@ sub Error {
 		delete $self->{'_data'};
 		($self->{'error'},$self->{'error_msg'}) = @_;
 	}
-	die $self->{'error_msg'}."\n" if $self->{'die_on_errors'};
-	return $self->{'error'}
+	if ($self->{'die_on_errors'} or $self->{'on_errors'} eq 'die') {
+		die $self->{'error_msg'}."\n" ;
+	} elsif (exists $self->{'on_errors'} and (!defined($self->{'on_errors'}) or $self->{'on_errors'} eq 'undef')) {
+		return
+	} else {
+		return $self->{'error'}
+	}
 }
 
 
@@ -891,7 +905,7 @@ the parameters passed to the "C<$Sender=new Mail::Sender(...)>";
 
 See C<new Mail::Sender> for info about the parameters.
 
-Returns ref to the Mail::Sender object if successfull, a negative error code if not.
+Returns ref to the Mail::Sender object if successfull.
 
 =cut
 
@@ -1093,7 +1107,7 @@ the parameters passed to the C<$Sender=new Mail::Sender(...)>.
 
 See C<new Mail::Sender> for info about the parameters.
 
-Returns ref to the Mail::Sender object if successfull, a negative error code if not.
+Returns ref to the Mail::Sender object if successfull.
 
 =cut
 
@@ -1301,7 +1315,7 @@ object and then call the method. You may do it like this :
 
  (new Mail::Sender)->MailMsg({smtp => 'mail.company.com', ...});
 
-Returns ref to the Mail::Sender object if successfull, a negative error code if not.
+Returns ref to the Mail::Sender object if successfull.
 
 =cut
 
@@ -1352,7 +1366,7 @@ will be used for the attached file, not the body of the message.
 If you want to specify those parameters for the body you have to use
 b_ctype, b_charset and b_encoding. Sorry.
 
-Returns ref to the Mail::Sender object if successfull, a negative error code if not.
+Returns ref to the Mail::Sender object if successfull.
 
 =cut
 
@@ -1734,7 +1748,7 @@ sub Part {
 
 	if ($ctype =~ m{^multipart/}i) {
 		$self->{'part'}+=2;
-		print $s "Content-Type: $ctype; boundary=\"$self->{'boundary'}_$self->{'part'}\"\r\n\r\n";
+		print $s "Content-Type: $ctype; boundary=\"Part-$self->{'boundary'}_$self->{'part'}\"\r\n\r\n";
 	} else {
 		$self->{'part'}++;
 		print $s "Content-type: $ctype\r\n";
@@ -1976,11 +1990,15 @@ sub EndPart {
 		delete $self->{'_buffer'};
 	}
 	print $s "=" if $self->{'encoding'} =~ /Quoted[_\-]print/i; # make sure we do not add a newline
-	print $s "\r\n--",
-		$self->{'boundary'},
-		($self->{'part'}>1 ? "_$self->{'part'}" : ()),
-		($end ? "--" : ()),
-		"\r\n";
+	if ($self->{'part'}>1) { # end of a subpart
+		print $s "\r\n--Part-$self->{'boundary'}_$self->{'part'}",
+			($end ? "--" : ()),
+			"\r\n";
+	} else {
+		print $s "\r\n--$self->{'boundary'}",
+			($end ? "--" : ()),
+			"\r\n";
+	}
 	$self->{'part'}--;
 	$self->{'code'}=\&enc_plain;
 	$self->{'encoding'} = '';
@@ -2449,23 +2467,85 @@ or
  my $sender = new Mail::Sender { ... };
  die "Error in mailing : $Mail::Sender::Error\n" unless ref $sender;
 
+or
+
+ my $sender = new Mail::Sender { ..., on_errors => 'undef' }
+   or die "Error in mailing : $Mail::Sender::Error\n";
+
 You may specify the options either when creating the Mail::Sender object
 or later when you open a message. You may also set the default options when
 installing the module (See C<CONFIG> section). This way the admin may set
 the SMTP server and even the authentication options and the users do not have
 to specify it again.
 
+You should keep in mind that the way Mail::Sender reports failures depends on the 'on_errors'=>
+option. If you set it to 'die' it throws an exception, if you set it to C<undef> or C<'undef'> it returns
+undef and otherwise it returns a negative error code!
+
 =head2 Simple single part message
 
-  $sender->Open({to => 'mama@home.org, papa@work.com',
-                cc => 'somebody@somewhere.com',
-                subject => 'Sorry, I\'ll come later.'});
-  $sender->SendLineEnc("I'm sorry, but due to a big load of work,
-     I'll come at 10pm at best.");
-  $sender->SendLineEnc("\nHi, Jenda");
-  $sender->Close;
+	$sender = new Mail::Sender {
+		smtp => 'mail.yourISP.com',
+		from => 'somebody@somewhere.com',
+		on_errors => undef,
+	}
+		or die "Can't create the Mail::Sender object: $Mail::Sender::Error\n";
+	$sender->Open({
+		to => 'mama@home.org, papa@work.com',
+		cc => 'somebody@somewhere.com',
+		subject => 'Sorry, I\'ll come later.'
+	})
+		or die "Can't open the message: $sender->{error_msg}\n";
+	$sender->SendLineEnc("I'm sorry, but thanks to the lusers,
+		I'll come at 10pm at best.");
+	$sender->SendLineEnc("\nHi, Jenda");
+	$sender->Close()
+		or die "Failed to send the message: $sender->{error_msg}\n";
 
 or
+
+	eval {
+		$sender = new Mail::Sender {
+			smtp => 'mail.yourISP.com',
+			from => 'somebody@somewhere.com',
+			on_errors => 'die',
+		};
+		$sender->Open({
+			to => 'mama@home.org, papa@work.com',
+			cc => 'somebody@somewhere.com',
+			subject => 'Sorry, I\'ll come later.'
+		});
+		$sender->SendLineEnc("I'm sorry, but thanks to the lusers,
+			I'll come at 10pm at best.");
+		$sender->SendLineEnc("\nHi, Jenda");
+		$sender->Close();
+	};
+	if ($@) {
+		die "Failed to send the message: $@\n";
+	}
+
+or
+
+	$sender = new Mail::Sender {
+		smtp => 'mail.yourISP.com',
+		from => 'somebody@somewhere.com',
+		on_errors => 'code',
+	};
+	die "Can't create the Mail::Sender object: $Mail::Sender::Error\n"
+		unless ref $sender;
+	ref $sender->Open({
+		to => 'mama@home.org, papa@work.com',
+		cc => 'somebody@somewhere.com',
+		subject => 'Sorry, I\'ll come later.'
+	})
+		or die "Can't open the message: $sender->{error_msg}\n";
+	$sender->SendLineEnc("I'm sorry, but thanks to the lusers,
+		I'll come at 10pm at best.");
+	$sender->SendLineEnc("\nHi, Jenda");
+	ref $sender->Close
+		or die "Failed to send the message: $sender->{error_msg}\n";
+
+=head2 Using GetHandle()
 
   ref $sender->Open({to => 'friend@other.com', subject => 'Hello dear friend'})
 	 or die "Error: $Mail::Sender::Error\n";
@@ -2490,7 +2570,7 @@ or
 or
 
   eval {
-    $sender->Open({ die_on_errors => 1,
+    $sender->Open({ on_errors => 'die',
 			 to => 'mama@home.org, papa@work.com',
                 cc => 'somebody@somewhere.com',
                 subject => 'Sorry, I\'ll come later.'});
@@ -2574,7 +2654,7 @@ or (in case you have the file contents in a scalar)
 
  use Mail::Sender;
  eval {
- (new Mail::Sender)
+ (new Mail::Sender {on_errors => 'die'})
  	->OpenMultipart({smtp=> 'jenda.krynicky.cz', to => 'jenda@krynicky.cz',subject => 'Mail::Sender.pm - new version'})
  	->Body({ msg => <<'*END*' })
  Here is a new module Mail::Sender.
@@ -2592,7 +2672,7 @@ or (in case you have the file contents in a scalar)
  		file => 'W:\jenda\packages\Mail\Sender\Mail-Sender-0.7.14.3.tar.gz'
  	})
  	->Close();
- } or print "Error sending mail: $Mail::Sender::Error\n";
+ } or print "Error sending mail: $@\n";
 
 =head2 Using MailMsg() shortcut to send simple messages
 
@@ -2876,15 +2956,28 @@ This WON'T work!!!
 
 =head2 GOTCHAS
 
-1) If you are able to connect to the mail server and scripts using Mail::Sendmail work, but Mail::Sender fails with
+=head3 Local user "someone@somewhere.com" doesn't exist
+
+"Thanks" to spammers mail servers usualy do not allow just anyone to post a message through them.
+Most often they require that either the sender or the recipient is local to the server
+
+=head3 Mail::Sendmail works, Mail::Sender doesn't
+
+If you are able to connect to the mail server and scripts using Mail::Sendmail work, but Mail::Sender fails with
 "connect() failed", please review the settings in /etc/services. The port for SMTP should be 25.
 
-2) If you change the $/ ($RS, $INPUT_RECORD_SEPARATOR) or $\ ($ORS, $OUTPUT_RECORD_SEPARATOR)
+=head3 $/ and $\
+
+If you change the $/ ($RS, $INPUT_RECORD_SEPARATOR) or $\ ($ORS, $OUTPUT_RECORD_SEPARATOR)
 or $, ($OFS, $OUTPUT_FIELD_SEPARATOR) Mail::Sender may stop working! Keep in mind that those variables are global
 and therefore they change the behaviour of <> and print everywhere.
 And since the SMTP is a plain text protocol if you change the notion of lines you can break it.
 
 If you have to fiddle with $/, $\ or $, do it in the smallest possible block of code and local()ize the change!
+
+	open my $IN, '<', $filename or die "Can't open $filename: $!\n";
+	my $data = do {local $/; <$IN>};
+	close $IN;
 
 =head1 BUGS
 
