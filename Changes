@@ -94,3 +94,10 @@ Version 0.7.11
 Version 0.7.12 - 2/18/2002
  added debuging output
  The problem with multiline responses from some SMTP servers (namely qmail) is solved.
+
+Version 0.7.13 - 3/13/2002
+ made compatible with Perl 5.004 again (sorry I don't have 5.004 at hand
+ and noone reported the problems before releasing 0.7.12 to general
+ public)
+ Improved compatibility with some BSD versions (using sockaddr_in() instead of pack())
+

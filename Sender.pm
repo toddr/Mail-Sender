@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.12 - beta
+# Mail::Sender.pm version 0.7.13
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION='0.7.12';
+$Mail::Sender::VERSION='0.7.13';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -32,8 +32,10 @@ BEGIN {
     my $config = $INC{'Mail/Sender.pm'};
     die "Wrong case in use statement or module renamed. Perl is case sensitive!!!\n" unless $config;
     $config =~ s/\.pm$/.config/;
-    eval {require $config if (-e $config)};
-    print STDERR "Error in Mail::Sender.config : $@" if $@;
+    eval {require $config};
+    if ($@ and $@ !~ /^Can't locate /) {
+        print STDERR "Error in Mail::Sender.config : $@" ;
+    }
 }
 
 #local IP address and name
@@ -113,10 +115,12 @@ sub __Debug {
 		unless (defined @Mail::Sender::DBIO::ISA) {
 			eval "use Symbol;";
 			eval $debug_code;
+			die $@ if $@;
 		}
 		my $handle = gensym();
 		if (! ref $file) {
-			open my $DEBUG, ">$file" or die "Cannot open the debug file $file : $!\n";
+			my $DEBUG = new FileHandle;
+			open $DEBUG, ">$file" or die "Cannot open the debug file $file : $!\n";
 			binmode $DEBUG;
 			$DEBUG->autoflush();
 			tie *$handle, 'Mail::Sender::DBIO', $self->{socket}, $DEBUG, 1;
@@ -203,40 +207,55 @@ sub NOTMULTIPART {
 }
 
 sub SITEERROR {
- $!=15;
- $Mail::Sender::Error="Site specific error";
- return -13;
+	$!=15;
+	$Mail::Sender::Error="Site specific error";
+	return -13;
 }
 
 sub NOTCONNECTED {
- $!=1;
- $Mail::Sender::Error="Connection not established. Didn't you mean MailFile instead of SendFile?";
- return -12;
+	$!=1;
+	$Mail::Sender::Error="Connection not established. Didn't you mean MailFile instead of SendFile?";
+	return -14;
+}
+
+sub NOSERVER {
+	$!=22;
+	$Mail::Sender::Error="No SMTP server specified";
+	return -15;
+}
+
+sub NOFROMSPECIFIED {
+ $!=22;
+ $Mail::Sender::Error="No From: address specified";
+ return -16;
 }
 
 
-
-@Mail::Sender::Errors = ('OK',
-              'site specific error',
-              'not available in singlepart mode',
-              'file not found',
-              'no file name specified in call to MailFile or SendFile',
-              'no message specified in call to MailMsg or MailFile',
-              'argument $to empty',
-              'transmission of message failed',
-              'local user $to unknown on host $smtp',
-              'unspecified communication error',
-              'service not available',
-              'connect() failed',
-              'socket() failed',
-              '$smtphost unknown'
-             );
+@Mail::Sender::Errors = (
+	'OK',
+	'no From: address specified',
+	'no SMTP server specified',
+	'connection not established. Did you mean MailFile instead of SendFile?',
+	'site specific error',
+	'not available in singlepart mode',
+	'file not found',
+	'no file name specified in call to MailFile or SendFile',
+	'no message specified in call to MailMsg or MailFile',
+	'argument $to empty',
+	'transmission of message failed',
+	'local user $to unknown on host $smtp',
+	'unspecified communication error',
+	'service not available',
+	'connect() failed',
+	'socket() failed',
+	'$smtphost unknown'
+);
 
 =head1 NAME
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.12
+Version 0.7.13
 
 =head1 SYNOPSIS
 
@@ -330,11 +349,9 @@ in all messages.
  charset   = the charset of the message
 
  client    = the name of the client computer. During the connection you send
-  the mailserver your name. Usualy a "localhost" is sufficient, but sometimes
-  you need to specify some real name. Usualy something like
-  `hostname`.'.mycompany.com'. But I leave this for you.
-  Mail::Sender doesn't try to guess the name, it sends "localhost" if you do
-  not specify otherwise.
+  the mailserver your name. By default Mail::Sender sends
+  (gethostbyname 'localhost')[0].
+  If that is not the address you need, you can specify a different one.
 
  priority   = 1 = highest, 2 = high, 3 = normal
   "X-Priority: 1 (Highest)";
@@ -386,7 +403,7 @@ sub initialize {
  $self->{'boundary'} = 'Message-Boundary-19990614';
  $self->{'multipart'} = 'Mixed'; # default is Multipart/Mixed
 
- $self->{'client'} = 'localhost';
+ $self->{'client'} = $local_name;
 
  # Copy defaults from %Mail::Sender::default
  my $key;
@@ -430,10 +447,7 @@ sub initialize {
   $self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
   $self->{'smtp'} =~ s/\s+$//g;
 
-  $self->{'smtpaddr'} = ($self->{'smtp'} =~
-  /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  ? pack('C4',$1,$2,$3,$4)
-  : (gethostbyname($self->{'smtp'}))[4];
+  $self->{'smtpaddr'} = inet_aton($self->{'smtp'});
 
   if (!defined($self->{'smtpaddr'})) { return $self->{'error'}=HOSTNOTFOUND($self->{smtp}); }
  }
@@ -520,6 +534,7 @@ sub Open {
 
  $self->{'boundary'} =~ tr/=/-/ if defined $changed{boundary};
 
+ return $self->{'error'} = NOFROMSPECIFIED unless defined $self->{'from'};
  if ($changed{from}) {
   $self->{'fromaddr'} = $self->{'from'};
   $self->{'fromaddr'} =~ s/.*<([^\s]*?)>/$1/; # get from email address
@@ -534,16 +549,14 @@ sub Open {
  if ($changed{smtp}) {
   $self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
   $self->{'smtp'} =~ s/\s+$//g;
-  $self->{'smtpaddr'} = ($self->{'smtp'} =~
-  /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  ? pack('C4',$1,$2,$3,$4)
-  : (gethostbyname($self->{'smtp'}))[4];
+  $self->{'smtpaddr'} = inet_aton($self->{'smtp'});
  }
 
  chomp $self->{'headers'} if $changed{'headers'};
 
  if (!$self->{'to'}) { return $self->{'error'}=TOEMPTY; }
 
+ return $self->{'error'}=NOSERVER() unless defined $self->{smtp};
  if (!defined($self->{'smtpaddr'})) { return $self->{'error'}=HOSTNOTFOUND($self->{smtp}); }
 
  if ($Mail::Sender::{SiteHook} and !$self->SiteHook()) {
@@ -557,8 +570,9 @@ sub Open {
    return $self->{'error'}=SOCKFAILED; }
 
  $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/); # Untaint
- if (!connect($s, pack('Sna4x8', AF_INET, $self->{'port'}, $self->{'smtpaddr'}))) {
-   return $self->{'error'}=CONNFAILED; }
+
+ $self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
+ return $self->{'error'}=CONNFAILED unless connect($s, $self->{'sin'});
 
  binmode $s;
  my($oldfh) = select($s); $| = 1; select($oldfh);
@@ -698,6 +712,7 @@ sub OpenMultipart {
  $self->{'boundary'} =~ tr/=/-/ if $changed{boundary};
  chomp $self->{'headers'} if $changed{'headers'};
 
+ return $self->{'error'} = NOFROMSPECIFIED unless defined $self->{'from'};
  if ($changed{from}) {
   $self->{'fromaddr'} = $self->{'from'};
   $self->{'fromaddr'} =~ s/.*<([^\s]*?)>/$1/; # get from email address
@@ -712,14 +727,12 @@ sub OpenMultipart {
  if ($changed{smtp}) {
   $self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
   $self->{'smtp'} =~ s/\s+$//g;
-  $self->{'smtpaddr'} = ($self->{'smtp'} =~
-  /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  ? pack('C4',$1,$2,$3,$4)
-  : (gethostbyname($self->{'smtp'}))[4];
+  $self->{'smtpaddr'} = inet_aton($self->{'smtp'});
  }
 
  if (!$self->{'to'}) { return $self->{'error'}=TOEMPTY; }
 
+ return $self->{'error'}=NOSERVER() unless defined $self->{smtp};
  if (!defined($self->{'smtpaddr'})) { return $self->{'error'}=HOSTNOTFOUND($self->{smtp}); }
 
  if ($Mail::Sender::{SiteHook} and !$self->SiteHook()) {
@@ -733,8 +746,9 @@ sub OpenMultipart {
    return $self->{'error'}=SOCKFAILED; }
 
  $self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/); # Untaint
- if (!connect($s, pack('Sna4x8', AF_INET, $self->{'port'}, $self->{'smtpaddr'}))) {
-   return $self->{'error'}=CONNFAILED; }
+
+ $self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
+ return $self->{'error'}=CONNFAILED unless connect($s, $self->{'sin'});
 
  binmode $s;
  my($oldfh) = select($s); $| = 1; select($oldfh);
@@ -925,6 +939,7 @@ sub MailFile {
  and
  $self->SendEnc($msg)
  or return undef;
+ $Mail::Sender::Error = '';
  foreach $file (@files) {
   my $cnt;
   my $filename = basename $file;
@@ -940,8 +955,11 @@ sub MailFile {
 
   my $code = $self->{'code'};
 
-  my $FH;
-  open $FH, "<$file";
+  my $FH = new FileHandle;
+  if (!open $FH, "<$file") {
+	$Mail::Sender::Error .= "File \"$file\" not found\n";
+	next;
+  }
   binmode $FH unless $ctype =~ m#^text/#i and $encoding =~ /Quoted[_\-]print|Base64/i;
   my $s;
   $s = $self->{'socket'};
@@ -951,6 +969,11 @@ sub MailFile {
    print $s (&$code($cnt));
   }
   close $FH;
+ }
+ if ($Mail::Sender::Error eq '') {
+	undef $Mail::Sender::Error;
+ } else {
+	chomp $Mail::Sender::Error;
  }
  $self->Close;
  return $self;
@@ -1082,7 +1105,7 @@ Returns 1 if successfull.
 
 sub SendLineEnc {
  push @_, "\r\n";
- goto SendEnc;
+ goto &SendEnc;
 }
 
 =item SendEx
@@ -1398,7 +1421,7 @@ sub SendFile {
     }
   }
   $self->SendLine;
-  my $FH;
+  my $FH = new FileHandle;
   open $FH, "<$file";
   binmode $FH unless $fctype =~ m#^text/#i and $encoding =~ /Quoted[_\-]print|Base64/i;
 
@@ -1528,7 +1551,7 @@ $debug_code = <<'*END*';
 package Mail::Sender::DBIO;
 use IO::Handle;
 use Tie::Handle;
-our @ISA = qw(Tie::Handle);
+@Mail::Sender::DBIO::ISA = qw(Tie::Handle);
 
 sub TIEHANDLE {
 	my ($pkg,$socket,$debughandle, $mayclose) = @_;
@@ -1565,7 +1588,7 @@ my $pseudo_handle_code = <<'*END*';
 package Mail::Sender::IO;
 use IO::Handle;
 use Tie::Handle;
-our @ISA = qw(Tie::Handle);
+@Mail::Sender::IO::ISA = qw(Tie::Handle);
 
 sub TIEHANDLE {
 	my ($pkg,$sender) = @_;
@@ -1845,7 +1868,7 @@ and "SITE_HEADERS" from time to time. To see who's cheating.
  		ctype => 'application/x-zip-encoded',
  		encoding => 'Base64',
  		disposition => 'attachment; filename="Sender.zip"; type="ZIP archive"',
- 		file => 'W:\jenda\packages\Mail\Sender\Mail-Sender-0.7.12.tar.gz'
+ 		file => 'W:\jenda\packages\Mail\Sender\Mail-Sender-0.7.13.tar.gz'
  	})
  	->Close();
  } or print "Error sending mail: $Mail::Sender::Error\n";
@@ -1913,38 +1936,67 @@ If you want to send a HTML mail:
 
 If you want to send a HTML with some inline images :
 
- use strict;
- use Mail::Sender;
- my $recipients = 'somebody@somewhere.com';
- my $sender = new Mail::Sender {smtp => 'your.mailhost.com'};
- if ($sender->OpenMultipart({from => 'itstech2@gate.net', to => $recipients,
-                       subject => 'Embedded Image Test', subtype => 'related',
-                       boundary => 'boundary-test-1',
-                       type => 'multipart/related'}) > 0) {
-  $sender->Attach(
-         {description => 'html body',
-         ctype => 'text/html; charset=us-ascii',
-         encoding => '7bit',
-         disposition => 'NONE',
-         file => 'test.html'
-   });
-  $sender->Attach(
-   {description => 'ed\'s gif',
-    ctype => 'image/gif',
-    encoding => 'base64',
-    disposition => "inline; filename=\"apache_pb.gif\";\r\nContent-ID: <ed1>",
-    file => 'apache_pb.gif'
-   });
-  $sender->Close() or die "Close failed! $Mail::Sender::Error\n";
- } else {
-  die "Cannot send mail: $Mail::Sender::Error\n";
- }
- __END__
+	use strict;
+	use Mail::Sender;
+	my $recipients = 'somebody@somewhere.com';
+	my $sender = new Mail::Sender {smtp => 'your.mailhost.com'};
+	if (ref $sender->OpenMultipart({
+		from => 'itstech2@gate.net', to => $recipients,
+		subject => 'Embedded Image Test',
+		boundary => 'boundary-test-1',
+		type => 'multipart/related'})) {
+		$sender->Attach(
+			 {description => 'html body',
+			 ctype => 'text/html; charset=us-ascii',
+			 encoding => '7bit',
+			 disposition => 'NONE',
+			 file => 'test.html'
+		});
+		$sender->Attach({
+			description => 'ed\'s gif',
+			ctype => 'image/gif',
+			encoding => 'base64',
+			disposition => "inline; filename=\"apache_pb.gif\";\r\nContent-ID: <img1>",
+			file => 'apache_pb.gif'
+		});
+		$sender->Close() or die "Close failed! $Mail::Sender::Error\n";
+	} else {
+		die "Cannot send mail: $Mail::Sender::Error\n";
+	}
 
 In the HTML you'll have this :
- ... <IMG src="cid:ed1"> ...
+ ... <IMG src="cid:img1"> ...
 
 Please keep in mind that the image name is unimportant, the Content-ID is what counts!
+
+# or using the eval{ $obj->Method()->Method()->...->Close()} trick ...
+
+	use Mail::Sender;
+	eval {
+	(new Mail::Sender)
+		->OpenMultipart({
+			to => 'someone@somewhere.com',
+			subject => 'Embedded Image Test',
+			boundary => 'boundary-test-1',
+			type => 'multipart/related'
+		})
+		->Attach({
+			description => 'html body',
+			ctype => 'text/html; charset=us-ascii',
+			encoding => '7bit',
+			disposition => 'NONE',
+			file => 'c:\temp\zk\HTMLTest.htm'
+		})
+		->Attach({
+			description => 'Test gif',
+			ctype => 'image/gif',
+			encoding => 'base64',
+			disposition => "inline; filename=\"test.gif\";\r\nContent-ID: <img1>",
+			file => 'test.gif'
+		})
+		->Close()
+	}
+	or die "Cannot send mail: $Mail::Sender::Error\n";
 
 
 If you want to send a mail with an attached file you just got from a HTML form:
@@ -2028,7 +2080,9 @@ Jan Krynicky <Jenda@Krynicky.cz>
 http://Jenda.Krynicky.cz
 
 With help of Rodrigo Siqueira <rodrigo@insite.com.br>,
-Ed McGuigan <itstech1@gate.net>, and others.
+Ed McGuigan <itstech1@gate.net>,
+John Sanche <john@quadrant.net>
+and others.
 
 =head1 COPYRIGHT
 

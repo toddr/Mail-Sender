@@ -88,17 +88,14 @@ while (1) {
  last unless $smtp;
 
  print "\n\t...Trying $smtp...";
- 
+
  my $proto = (getprotobyname('tcp'))[2];
  my $port  = getservbyname('smtp', 'tcp');
 
  $smtp =~ s/^\s+//g; # remove spaces around $smtp
  $smtp =~ s/\s+$//g;
 
- my $smtpaddr = ($smtp =~
-  /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  ? pack('C4',$1,$2,$3,$4)
-  : (gethostbyname($smtp))[4];
+ my $smtpaddr = inet_aton($smtp);
 
  unless ($smtpaddr) {
   print "FAILED\n\t...cannot find server '$smtp' !!!\n";
@@ -117,7 +114,7 @@ nor any other network related module will work. :-((
   if (Ignore()) {last} else {next};
  }
 
- if (!connect($s, pack('Sna4x8', &AF_INET, $port, $smtpaddr))) {
+ if (!connect($s, sockaddr_in($port, $smtpaddr))) {
   print "FAILED\n\t...the server is either down or doesn't accept connections\n\ton port 25(SMTP).";
   if (Ignore()) {last} else {next};
  }
