@@ -113,3 +113,20 @@ Version 0.7.14 - 6/6/2002
  added ESMTP authentication (LOGIN, PLAIN, CRAM-MD5)
  docs tuneup
  various small fixes
+
+Version 0.8.00
+
+Version 0.8.01
+ internal only, please do not use
+ fixed problems with PerlIO and ascii-mode sockets under windows with Perl 5.8
+
+Version 0.8.03 - 12/29/2002
+ - added NTLM authentication
+ - send_cmd (internal function for sending commands to the server) checks for
+   broken connections
+ - reverted the server response tests
+   (instead of /^[45]/ (server reported an error)
+   I use now !/^[123]/ (server reported success) )
+ - some documentation fixes and additions
+
+
