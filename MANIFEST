@@ -1,6 +1,6 @@
 Changes
-Makefile
 Makefile.PL
+Config.PL
 MANIFEST
 README
 Sender.pm

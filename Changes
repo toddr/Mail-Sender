@@ -1,5 +1,47 @@
 Revision history for Perl extension Mail::Sender.
 
-0.01  Tue Dec 22 16:39:13 1998
-	- original version; created by h2xs 1.18
+I am sorry I did not keep track of the changes :-(
+
+Version 0.4 :
+ I added several methods for most common tasks.
+  MailMsg : Send a string as a mail by single call
+  MailFile : The same plus attached files
+  SendFile : Insert a file as a part of a multipart message
+  Send(Line)Enc : Automatic encoding (Base64,Quoted-Printable)
+
+Version 0.5 :
+ Cancel : cancel an Opened message.
+ $sender->{'error'} : last error for this object.
+ @Errors : a list of error messages.
+ Several minor fixes.
+ 
+Version 0.6 :
+ fixed problems with Base64 encoding. Files are now read, encoded and
+ sent in parts instead of whole at once. You may call SendEnc several
+ times in one part now.
+
+...
+
+Version 0.6.6 : Added support for CC: and BCC:.
+
+Version 0.6.9b : 7/19/1999 - BETA
+ Open(), MailMsg and MailFile accept ctype, and encoding parameters.
+
+ You have more options in Part() and Body(). It's possible to send HTML
+ mails with inlined images easily now.
+
+ Error -5 (Unspecified communication error) now includes the actual
+ error returned by the mail server.
+
+ Some more examples in the docs.
+
+ Mail::Sender now tries to guess the content type for attached files.
+
+ You may now create not only multipart/mixed but also multipart/related
+ or other messages.
+
+Version 0.7.00
+ Mail/Sender.config file may be used to set up default options for
+ new Mail::Sender. You may install a function that gets called for every
+ message.
 

@@ -4,7 +4,7 @@ Version 0.6.7
  http://Jenda.Krynicky.cz
   
 Known problems :
- The module doesn't work woth qmail, the cause of the problem is known,
+ The module doesn't work with qmail, the cause of the problem is known,
  but the fix requires an almost complete rewrite.
  The problem is that the module understands only one-line responses
  from the SMTP server and qmail is very talkative.
@@ -13,4 +13,8 @@ Future plans:
  I would like to rewrite the module completely to clean up the code and
  add better error handling. During that I'll add also timeouts and stuff.
  I don't know when will I have time to do that :-(
+
+Copyright (c) 1997-1999 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.
 
