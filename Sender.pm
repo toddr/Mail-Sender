@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.8.04
+# Mail::Sender.pm version 0.8.05
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.04';
+$Mail::Sender::VERSION = '0.8.05';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
@@ -25,6 +25,7 @@ BEGIN {
 use strict;
 use warnings;
 no warnings 'uninitialized';
+use Carp;
 use FileHandle;
 use Socket;
 use File::Basename;
@@ -459,7 +460,7 @@ sub UNKNOWNAUTH {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.04
+Version 0.8.05
 
 =head1 SYNOPSIS
 
@@ -685,6 +686,11 @@ OpenMultipart, MailMsg or MailFile with the "smtp" parameter.
 This means that if you want the object to keep the connection you should pass the "smtp" either to "new Mail::Sender"
 or only to the first Open, OpenMultipart, MailMsg or MailFile!
 
+=item die_on_errors
+
+If set to true value Mail::Sender doesn't return a negative error code, but throws an exception containing
+the message. $Mail::Sender::Error, $sender->{'error'} and $self->{'error_msg'} is set as usual.
+
 =back
 
 =head2 Return codes
@@ -717,8 +723,14 @@ $Mail::Sender::Error contains a textual description of last error.
 
 sub new {
 	my $this = shift;
-	my $class = ref($this) || $this;
 	my $self = {};
+	my $class;
+	if (ref($this)) {
+		$class = ref($this);
+		%$self = %$this;
+	} else {
+		$class = $this;
+	}
 	bless $self, $class;
 	return $self->initialize(@_);
 }
@@ -861,6 +873,7 @@ sub Error {
 		delete $self->{'_data'};
 		($self->{'error'},$self->{'error_msg'}) = @_;
 	}
+	die $self->{'error_msg'}."\n" if $self->{'die_on_errors'};
 	return $self->{'error'}
 }
 
@@ -1451,7 +1464,7 @@ Doesn't encode the data! You should use C<\r\n> as the end-of-line!
 UNLESS YOU ARE ABSOLUTELY SURE YOU KNOW WHAT YOU ARE DOING
 YOU SHOULD USE SendEnc() INSTEAD!
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -1471,9 +1484,9 @@ Prints the strings to the socket. Adds the end-of-line character at the end.
 Doesn't encode the data! You should use C<\r\n> as the end-of-line!
 
 UNLESS YOU ARE ABSOLUTELY SURE YOU KNOW WHAT YOU ARE DOING
-YOU SHOULD USE SendEnc() INSTEAD!
+YOU SHOULD USE SendLineEnc() INSTEAD!
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -1507,7 +1520,7 @@ Prints the strings to the socket. Doesn't add any end-of-line characters.
 
 Encodes the text using the selected encoding (none/Base64/Quoted-printable)
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -1560,7 +1573,7 @@ Using C<Send(encode_base64($string))> may work, but more likely it will not!
 In particular if you use several such to create one part,
 the data is very likely to get crippled.
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -1579,7 +1592,7 @@ Changes all end-of-lines to C<\r\n>. Doesn't encode the data!
 UNLESS YOU ARE ABSOLUTELY SURE YOU KNOW WHAT YOU ARE DOING
 YOU SHOULD USE SendEnc() INSTEAD!
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -1607,7 +1620,7 @@ Changes all end-of-lines to C<\r\n>. Doesn't encode the data!
 UNLESS YOU ARE ABSOLUTELY SURE YOU KNOW WHAT YOU ARE DOING
 YOU SHOULD USE SendEnc() INSTEAD!
 
-Returns 1 if successfull.
+Returns the object if successfull.
 
 =cut
 
@@ -2043,6 +2056,7 @@ sub Cancel {
 }
 
 sub DESTROY {
+	return if ref($_[0]) ne 'Mail::Sender';
 	my $self = shift;
 	if (defined $self->{'socket'}) {
 		delete $self->{'keepconnection'};
@@ -2077,16 +2091,27 @@ the authentication protocols it supports.
 sub QueryAuthProtocols {
 	my $self = shift;
 	local $_;
-	if ($self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
-		die "You forgot to close the mail before calling QueryAuthProtocols!\n"
-	}
-
-	if (@_) {
-		$self->{'smtp'} = shift();
-		$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
-		$self->{'smtp'} =~ s/\s+$//g;
-		$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
-		$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
+	if (!defined $self) {
+		croak "Mail::Sender::QueryAuthProtocols() called without the parameter!";
+	} elsif (ref $self) { # $sender->QueryAuthProtocols() or $sender->QueryAuthProtocols('the.server.com)
+		if ($self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
+			die "You forgot to close the mail before calling QueryAuthProtocols!\n"
+		}
+		if (@_) {
+			$self->{'smtp'} = shift();
+			$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
+			$self->{'smtp'} =~ s/\s+$//g;
+			$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+			$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
+		}
+	} elsif ($self =~ /::/) { # Mail::Sender->QueryAuthProtocols('the.server.com')
+		croak "Mail::Sender->QueryAuthProtocols() called without the parameter!"
+			if ! @_;
+		$self = new Mail::Sender {smtp => $_[0]};
+		return unless ref $self;
+	} else { # Mail::Sender::QueryAuthProtocols('the.server.com')
+		$self = new Mail::Sender {smtp => $self};
+		return unless ref $self;
 	}
 
 	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
@@ -2119,7 +2144,16 @@ sub QueryAuthProtocols {
 	close $s;
 	delete $self->{'socket'};
 
-	return keys %{$self->{'auth_protocols'}};
+	if (wantarray) {
+		return keys %{$self->{'auth_protocols'}};
+	} else {
+		my $key = each %{$self->{'auth_protocols'}};
+		return $key;
+	}
+}
+
+sub printAuthProtocols {
+	print "$_[1] supports: ",join(", ", Mail::Sender->QueryAuthProtocols($_[1])),"\n";
 }
 
 #====== Debuging bazmecks
@@ -2353,12 +2387,31 @@ and "SITE_HEADERS" from time to time. To see who's cheating.
 
 =head1 AUTHENTICATION
 
+If you get a "Local user "xxx@yyy.com" unknown on host "zzz"" message it usualy means that
+your mail server is set up to forbid mail relay. That is it only accepts messages to or from a local user.
+If you need to be able to send a message with both the sender's and recipient's address remote, you
+need to somehow authenticate to the server. You may need the help of the mail server's administrator
+to find out what username and password and/or what authentication protocol are you supposed to use.
+
 There are many authentication protocols defined for ESTMP, Mail::Sender natively supports
 only PLAIN, LOGIN, CRAM-MD5 and NTLM (please see the docs for C<new Mail::Sender>).
 
-It is easy to add another protocol though. All you have to do is to define a function
-Mail::Sender::Auth::PROTOCOL_NAME that will implement the login. The function gets
-one parameter ... the Mail::Sender object. It can access these properties:
+If you want to know what protocols are supported by your server you may get the list by this:
+
+	/tmp# perl -MMail::Sender -e 'Mail::Sender->printAuthProtocols("the.server.com")'
+  or
+	c:\> perl -MMail::Sender -e "Mail::Sender->printAuthProtocols('the.server.com')"
+
+
+There is one more way to authenticate. Some servers want you to login by POP3 before you
+can send a message. You have to use Net::POP3 or Mail::POP3Client to do this.
+
+=head2 Other protocols
+
+It is possible to add new authentication protocols to Mail::Sender. All you have to do is
+to define a function Mail::Sender::Auth::PROTOCOL_NAME that will implement
+the login. The function gets one parameter ... the Mail::Sender object.
+It can access these properties:
 
 	$obj->{'socket'} : the socket to print to and read from
 		you may use the send_cmd() function to send a request
@@ -2371,9 +2424,11 @@ one parameter ... the Mail::Sender object. It can access these properties:
 		any other options, please use names starting with "auth". Eg. "authdomain", ...
 	$obj->{'error'} : this should be set to a negative error number. Please use numbers
 		below -1000 for custom errors.
+	$obj->{'error_msg'} : this should be set to the error message
 
 	If the login fails you should
 		1) Set $Mail::Sender::Error to the error message
+		2) Set $obj->{'error_msg'} to the error message
 		2) Set $obj->{'error'} to a negative number
 		3) return a negative number
 	If it succeeds, please return "nothing" :
@@ -2402,35 +2457,53 @@ to specify it again.
 
 =head2 Simple single part message
 
- $sender->Open({to => 'mama@home.org, papa@work.com',
+  $sender->Open({to => 'mama@home.org, papa@work.com',
                 cc => 'somebody@somewhere.com',
                 subject => 'Sorry, I\'ll come later.'});
- $sender->SendLineEnc("I'm sorry, but due to a big load of work,
-    I'll come at 10pm at best.");
- $sender->SendLineEnc("\nHi, Jenda");
- $sender->Close;
+  $sender->SendLineEnc("I'm sorry, but due to a big load of work,
+     I'll come at 10pm at best.");
+  $sender->SendLineEnc("\nHi, Jenda");
+  $sender->Close;
 
 or
 
- ref $sender->Open({to => 'friend@other.com', subject => 'Hello dear friend'})
+  ref $sender->Open({to => 'friend@other.com', subject => 'Hello dear friend'})
 	 or die "Error: $Mail::Sender::Error\n";
- my $FH = $sender->GetHandle();
- print $FH "How are you?\n\n";
- print $FH <<'*END*';
- I've found these jokes.
+  my $FH = $sender->GetHandle();
+  print $FH "How are you?\n\n";
+  print $FH <<'*END*';
+  I've found these jokes.
 
-  Doctor, I feel like a pack of cards.
-  Sit down and I'll deal with you later.
+   Doctor, I feel like a pack of cards.
+   Sit down and I'll deal with you later.
 
-  Doctor, I keep thinking I'm a dustbin.
-  Don't talk rubbish.
+   Doctor, I keep thinking I'm a dustbin.
+   Don't talk rubbish.
 
- Hope you like'em. Jenda
- *END*
+  Hope you like'em. Jenda
+  *END*
 
- $sender->Close;
- # or
- # close $FH;
+  $sender->Close;
+  # or
+  # close $FH;
+
+or
+
+  eval {
+    $sender->Open({ die_on_errors => 1,
+			 to => 'mama@home.org, papa@work.com',
+                cc => 'somebody@somewhere.com',
+                subject => 'Sorry, I\'ll come later.'});
+    $sender->SendLineEnc("I'm sorry, but due to a big load of work,
+  I'll come at 10pm at best.");
+    $sender->SendLineEnc("\nHi, Jenda");
+    $sender->Close;
+  };
+  if ($@) {
+    print "Error sending the email: $@\n";
+  } else {
+    print "The mail was sent.\n";
+  }
 
 =head2 Multipart message with attachment
 
@@ -2474,6 +2547,28 @@ or
    file => 'sender.zip'
   });
  $sender->Close;
+
+or (in case you have the file contents in a scalar)
+
+ $sender->OpenMultipart({to => 'Perl-Win32-Users@activeware.foo',
+                         subject => 'Mail::Sender.pm - new version'});
+ $sender->Body({ msg => <<'*END*' });
+ Here is a new module Mail::Sender.
+ It provides an object based interface to sending SMTP mails.
+ It uses a direct socket connection, so it doesn't need any
+ additional program.
+
+ Enjoy, Jenda
+ *END*
+ $sender->Part(
+  {description => 'Perl module Mail::Sender.pm',
+   ctype => 'application/x-zip-encoded',
+   encoding => 'Base64',
+   disposition => 'attachment; filename="Sender.zip"; type="ZIP archive"',
+   msg => $sender_zip_contents,
+  });
+ $sender->Close;
+
 
 =head2 Using exceptions (no need to test return values after each function)
 
@@ -2745,6 +2840,24 @@ If this doesn't work with your mail client, please let me know and we might find
  $sender->Close();
 
  print "Content-type: text/plain\n\nYes, it's sent\n\n";
+
+=head2 Listing the authentication protocols supported by the server
+
+ use Mail::Sender;
+ my $sender = new Mail::Sender {smtp => 'localhost'};
+ die "Error: $Mail::Sender::Error\n" unless ref $sender;
+ print join(', ', $sender->QueryAuthProtocols()),"\n";
+
+or (if you have Mail::Sender 0.8.05 or newer)
+
+ use Mail::Sender;
+ print join(', ', Mail::Sender->QueryAuthProtocols('localhost')),"\n";
+
+or
+
+ use Mail::Sender;
+ print join(', ', Mail::Sender::QueryAuthProtocols('localhost')),"\n";
+
 
 =head2 WARNING
 

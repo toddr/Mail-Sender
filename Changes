@@ -132,3 +132,6 @@ Version 0.8.03 - 12/29/2002
 Version 0.8.04 - 01/08/2003
  - fixed typo causing the "Unknown PerlIO layer 'raw:perlio' at .../Mail/Sender.pm line 21"
  - fixed incorrect handling of halfhour timezones
+
+Version 0.8.05 - 03/01/2003
+ - new Mail::Sender ({..., die_on_errors => 1});
