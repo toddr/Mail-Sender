@@ -58,3 +58,15 @@ Version 0.7.03 - 14/1/19100
   Don't tell me I'm stuuupid, I know it. As Jan Starzynski <jan@planet.de>
   pointed out it ate the last character on each line in SendEx() (Used in SendFile)
   under Unix. Oh well :-(
+
+Version 0.7.04 - 8/1/19100
+ bugfix
+  A fix only in the configuration script because of some unimportant
+  problems with PPM instalation. No change to the module itself.
+
+Version 0.7.05 - 25/1/19100
+ Added fake_from, fake_to and fake_cc options to
+ new/Open/OpenMultipart/MailMsg/MailFile.
+ This allows you to send a message to a list of people, while including
+ only the list name/address in the headers. The fake_... may be whatever
+ text you like, doesn't need to look like an address.

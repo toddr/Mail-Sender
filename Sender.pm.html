@@ -37,7 +37,7 @@ Mail::Sender - module for sending mails with attachments through an SMTP
 server
 
 <P>
-Version 0.7.03
+Version 0.7.06
 
 <P>
 <HR>
@@ -83,13 +83,25 @@ The parameters are used in subsequent calls to <CODE>$Sender-</CODE>Open&gt; and
 <PRE> from      = the senders e-mail address
 </PRE>
 <P>
+<PRE> fake_from = the address that will be shown in headers
+             If not specified we use the value of &quot;from&quot;
+</PRE>
+<P>
 <PRE> replyto   = the reply-to address
 </PRE>
 <P>
 <PRE> to        = the recipient's address(es)
 </PRE>
 <P>
+<PRE> fake_to   = the address that will be shown in headers
+             If not specified we use the value of &quot;to&quot;
+</PRE>
+<P>
 <PRE> cc        = address(es) to send a copy (carbon copy)
+</PRE>
+<P>
+<PRE> fake_cc   = the address that will be shown in headers
+             If not specified we use the value of &quot;cc&quot;
 </PRE>
 <P>
 <PRE> bcc       = address(es) to send a copy (blind carbon copy)
@@ -147,6 +159,10 @@ The parameters are used in subsequent calls to <CODE>$Sender-</CODE>Open&gt; and
   `hostname`.'.mycompany.com'. But I leave this for you.
   Mail::Sender doesn't try to guess the name, it sends &quot;localhost&quot; if you do
   not specify otherwise.
+</PRE>
+<P>
+<PRE> priority   = 1 = highest, 2 = high, 3 = normal
+  &quot;X-Priority: 1 (Highest)&quot;;
 </PRE>
 <P>
 <PRE> return codes:
@@ -209,6 +225,16 @@ the ``<CODE>$Sender=new Mail::Sender(...)</CODE>'';
 <P>
 see <CODE>new Mail::Sender</CODE> for info about the parameters.
 
+<P>
+The module was made so that you could create an object initialized with all
+the necesary options and then send several messages without need to specify
+the SMTP server and others each time. If you need to send only one mail
+using <CODE>MailMsg()</CODE> or <CODE>MailFile()</CODE> you do not have to
+create a named object and then call the method. You may do it like this :
+
+<P>
+<PRE> (new Mail::Sender)-&gt;MailMsg({smtp =&gt; 'mail.company.com', ...});
+</PRE>
 <DT><STRONG><A NAME="item_MailFile">MailFile</A></STRONG><DD>
 <P>
 <PRE> MailFile([from [, replyto [, to [, smtp [, subject [, headers]]]]]], message, file(s))
@@ -241,7 +267,8 @@ and b_encoding. Sorry.
 </PRE>
 <P>
 Prints the strings to the socket. Doesn't add any end-of-line characters.
-You should use <CODE>\r\n</CODE> as the end-of-line.
+You should use <CODE>\r\n</CODE> as the end-of-line. IF YOU ARE NOT SURE ABOUT THIS USE
+<CODE>SendEx()</CODE> INSTEAD!
 
 <DT><STRONG><A NAME="item_SendLine">SendLine</A></STRONG><DD>
 <P>
@@ -282,7 +309,9 @@ part, the data is very likely to get crippled.
 </PRE>
 <P>
 Prints the strings to the socket. Doesn't add any end-of-line characters.
-Changes all end-of-lines to <CODE>\r\n</CODE>.
+Changes all end-of-lines to <CODE>\r\n</CODE>. YOU'D BETTER USE THIS METHOD THAN JUST <CODE>Send(),</CODE> SOME E-MAIL
+SERVERS ARE PICKY AND WOUNT ACCEPT THE MESSAGE IF YOU DO NOT USE CRLF
+(\r\n) AS THE END-OF-LINE !
 
 <DT><STRONG><A NAME="item_SendLineEx">SendLineEx</A></STRONG><DD>
 <P>
@@ -722,14 +751,47 @@ Please keep in mind that the image name is unimportant, the Content-ID is
 what counts!
 
 <P>
-The module was made so that you could create an object initialized with all
-the necesary options and then send several messages without need to specify
-the SMTP server and others each time. If you need to send only one mail
-using <CODE>MailMsg()</CODE> or <CODE>MailFile()</CODE> you do not have to
-create a named object and then call the method. You may do it like this :
+If you want to send a mail with an attached file you just got from a HTML
+form:
 
 <P>
-<PRE> (new Mail::Sender)-&gt;MailMsg({smtp =&gt; 'mail.company.com', ...});
+<PRE> #!perl
+</PRE>
+<P>
+<PRE> use CGI;
+ use Mail::Sender;
+</PRE>
+<P>
+<PRE> $query = new CGI;
+</PRE>
+<P>
+<PRE> # uploading the file...
+ $filename = $query-&gt;param('mailformFile');
+ if ($filename ne &quot;&quot;){
+  $tmp_file = $query-&gt;tmpFileName($filename);
+ }
+</PRE>
+<P>
+<PRE> $sender = new Mail::Sender {from =&gt; 'script@mccann.cz',smtp =&gt; 'mail.mccann.cz'};
+ $sender-&gt;OpenMultipart({to=&gt; 'jenda@mccann.cz',subject=&gt; 'test CGI attach'});
+ $sender-&gt;Body();
+ $sender-&gt;Send(&lt;&lt;&quot;*END*&quot;);
+ This is just a test of mail with an uploaded file.
+</PRE>
+<P>
+<PRE> Jenda
+ *END*
+ $sender-&gt;SendFile(
+          {encoding =&gt; 'Base64',
+    description =&gt; $filename,
+    ctype =&gt; $query-&gt;uploadInfo($filename)-&gt;{'Content-Type'},
+    disposition =&gt; &quot;attachment; filename = $filename&quot;,
+           file =&gt; $tmp_file
+          });
+ $sender-&gt;Close();
+</PRE>
+<P>
+<PRE> print &quot;Content-type: text/plain\n\nYes, it's sent\n\n&quot;;
 </PRE>
 <P>
 <HR>

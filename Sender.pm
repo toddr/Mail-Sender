@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.04
+# Mail::Sender.pm version 0.7.06
 #
 # Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.04';
+$Mail::Sender::VERSION='0.7.06';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -28,11 +28,13 @@ my $chunksize=1024*3;
 
 # include config file :
 
+#perl2exe_include Mail::Sender.config
 BEGIN {
     my $config = $INC{'Mail/Sender.pm'};
     die "Wrong case in use statement or module renamed. Perl is case sensitive!!!\n" unless $config;
     $config =~ s/\.pm$/.config/;
-    require $config if (-e $config);
+    eval {require $config if (-e $config)};
+    print STDERR "Error in Mail::Sender.config : $@" if $@;
 }
 
 #internals
@@ -136,7 +138,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.04
+Version 0.7.06
 
 =head1 SYNOPSIS
 
@@ -176,11 +178,20 @@ in all messages.
 
  from      = the senders e-mail address
 
+ fake_from = the address that will be shown in headers
+             If not specified we use the value of "from"
+
  replyto   = the reply-to address
 
  to        = the recipient's address(es)
 
+ fake_to   = the address that will be shown in headers
+             If not specified we use the value of "to"
+
  cc        = address(es) to send a copy (carbon copy)
+
+ fake_cc   = the address that will be shown in headers
+             If not specified we use the value of "cc"
 
  bcc       = address(es) to send a copy (blind carbon copy)
              these addresses will not be visible in the mail!
@@ -227,6 +238,8 @@ in all messages.
   Mail::Sender doesn't try to guess the name, it sends "localhost" if you do
   not specify otherwise.
 
+ priority   = 1 = highest, 2 = high, 3 = normal
+  "X-Priority: 1 (Highest)";
 
  return codes:
   ref to a Mail::Sender object =  success
@@ -448,7 +461,7 @@ sub Open {
 
  { local $^W;
  foreach (split(/, */, $self->{'to'}),split(/, */, $self->{'cc'}),split(/, */, $self->{'bcc'})) {
-  next unless /\w/; # a basic sanity check
+  next unless /@/; # a basic sanity check
   if (/<(.*)>/) {
    print $s "rcpt to: $1\r\n";
   } else {
@@ -483,10 +496,14 @@ sub Open {
   $self->{'headers'} = defined $self->{'headers'} ? $self->{'headers'}."\r\n".$headers : $headers;
  }
 
- print $s "To: $self->{'to'}\r\n";
- print $s "From: $self->{'from'}\r\n";
- print $s "Cc: $self->{'cc'}\r\n" if defined $self->{'cc'};
- print $s "Reply-to: $self->{'reply'}\r\n" if $self->{'reply'};
+ print $s "To: ", defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'},"\r\n";
+ print $s "From: ", defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'},"\r\n";
+ if (defined $self->{'fake_cc'}) {
+  print $s "Cc: $self->{'fake_cc'}\r\n";
+ } elsif (defined $self->{'cc'}) {
+  print $s "Cc: $self->{'cc'}\r\n";
+ }
+ print $s "Reply-to: $self->{'reply'}\r\n" if defined $self->{'reply'};
  print $s "X-Mailer: Perl Mail::Sender $Mail::Sender::ver Jan Krynicky  http://jenda.krynicky.cz/\r\n" unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) { print $s $Mail::Sender::SITE_HEADERS,"\r\n" };
  if ($self->{'headers'}) {print $s $self->{'headers'},"\r\n"};
@@ -607,7 +624,7 @@ sub OpenMultipart {
   $list .= ",$self->{'cc'}"  if defined $self->{'cc'};
   $list .= ",$self->{'bcc'}" if defined $self->{'bcc'};
   foreach (split(/, */, $list)) {
-   next unless /\w/; # a basic sanity check
+   next unless /@/; # a basic sanity check
    if (/<(.*)>/) {
     print $s "rcpt to: $1\r\n";
    } else {
@@ -620,9 +637,13 @@ sub OpenMultipart {
  print $s "data\r\n";
  $_ = <$s>; if (/^[45]/) { close $s; return $self->{'error'}=COMMERROR($_); }
 
- print $s "To: $self->{'to'}\r\n";
- print $s "Cc: $self->{'cc'}\r\n" if $self->{'cc'};
- print $s "From: $self->{'from'}\r\n";
+ print $s "To: ", defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'},"\r\n";
+ print $s "From: ", defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'},"\r\n";
+ if (defined $self->{'fake_cc'}) {
+  print $s "Cc: $self->{'fake_cc'}\r\n";
+ } elsif (defined $self->{'cc'}) {
+  print $s "Cc: $self->{'cc'}\r\n";
+ }
  print $s "Reply-to: $self->{'reply'}\r\n" if $self->{'reply'};
  print $s "X-Mailer: Perl Mail::Sender $Mail::Sender::ver Jan Krynicky  http://jenda.krynicky.cz/\r\n"  unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) {print $s $Mail::Sender::SITE_HEADERS,"\r\n"};
@@ -648,6 +669,14 @@ If some parameters are unspecified or empty, it uses
 the parameters passed to the "C<$Sender=new Mail::Sender(...)>";
 
 see C<new Mail::Sender> for info about the parameters.
+
+The module was made so that you could create an object initialized with
+all the necesary options and then send several messages without need to
+specify the SMTP server and others each time. If you need to send only
+one mail using MailMsg() or MailFile() you do not have to create a named
+object and then call the method. You may do it like this :
+
+ (new Mail::Sender)->MailMsg({smtp => 'mail.company.com', ...});
 
 =cut
 
@@ -701,7 +730,7 @@ sub MailFile {
  my $self = shift;
  my $msg;
  local $_;
- my $file;my $desc;
+ my ($file, $desc, $haddesc);
  my @files;
  if (ref $_[0] eq 'HASH') {
   my $hash = $_[0];
@@ -709,7 +738,7 @@ sub MailFile {
   delete $hash->{msg};
   $file=$hash->{file};
   delete $hash->{file};
-  $desc=$hash->{description};
+  $desc=$hash->{description}; $haddesc = 1 if defined $desc;
   delete $hash->{description};
  } else {
   $desc=pop if ($#_ >=2);
@@ -745,6 +774,9 @@ sub MailFile {
   my $filename = basename $file;
   my $ctype = $self->{ctype} || GuessCType $filename;
   my $encoding = $self->{ctype} || ($ctype =~ m#^text/# ? 'Quoted-printable' : 'BASE64');
+
+  $desc = $filename unless (defined $haddesc);
+
   $self->Part({encoding => $encoding,
                disposition => $self->{'disposition'},  #"attachment; filename=\"$filename\"",
                ctype => "$ctype; name=\"$filename\"; type=Unknown",
@@ -771,7 +803,7 @@ sub MailFile {
  Send(@strings)
 
 Prints the strings to the socket. Doesn't add any end-of-line characters.
-You should use C<\r\n> as the end-of-line.
+You should use C<\r\n> as the end-of-line. IF YOU ARE NOT SURE ABOUT THIS USE SendEx() INSTEAD!
 
 =cut
 sub Send {
@@ -869,7 +901,9 @@ sub SendLineEnc {
  SendEx(@strings)
 
 Prints the strings to the socket. Doesn't add any end-of-line characters.
-Changes all end-of-lines to C<\r\n>.
+Changes all end-of-lines to C<\r\n>. YOU'D BETTER USE THIS METHOD THAN JUST Send(),
+SOME E-MAIL SERVERS ARE PICKY AND WOUNT ACCEPT THE MESSAGE IF YOU DO NOT USE CRLF (\r\n)
+AS THE END-OF-LINE !
 
 =cut
 
@@ -895,15 +929,8 @@ Changes all end-of-lines to C<\r\n>.
 =cut
 
 sub SendLineEx {
- my $self = shift;
- my $s;#=FileHandle::new FileHandle;
- $s = $self->{'socket'};
- my $str;
- foreach $str (@_) {
-  $str =~ s/\n/\r\n/;
- }
- print $s (@_,"\r\n");
- return 1;
+ push @_, "\n";
+ goto &SendEx;
 }
 
 
@@ -1503,13 +1530,40 @@ In the HTML you'll have this :
 
 Please keep in mind that the image name is unimportant, the Content-ID is what counts!
 
-The module was made so that you could create an object initialized with
-all the necesary options and then send several messages without need to
-specify the SMTP server and others each time. If you need to send only
-one mail using MailMsg() or MailFile() you do not have to create a named
-object and then call the method. You may do it like this :
 
- (new Mail::Sender)->MailMsg({smtp => 'mail.company.com', ...});
+If you want to send a mail with an attached file you just got from a HTML form:
+
+ #!perl
+
+ use CGI;
+ use Mail::Sender;
+
+ $query = new CGI;
+
+ # uploading the file...
+ $filename = $query->param('mailformFile');
+ if ($filename ne ""){
+  $tmp_file = $query->tmpFileName($filename);
+ }
+
+ $sender = new Mail::Sender {from => 'script@mccann.cz',smtp => 'mail.mccann.cz'};
+ $sender->OpenMultipart({to=> 'jenda@mccann.cz',subject=> 'test CGI attach'});
+ $sender->Body();
+ $sender->Send(<<"*END*");
+ This is just a test of mail with an uploaded file.
+
+ Jenda
+ *END*
+ $sender->SendFile(
+          {encoding => 'Base64',
+    description => $filename,
+    ctype => $query->uploadInfo($filename)->{'Content-Type'},
+    disposition => "attachment; filename = $filename",
+           file => $tmp_file
+          });
+ $sender->Close();
+
+ print "Content-type: text/plain\n\nYes, it's sent\n\n";
 
 =head2 WARNING
 
