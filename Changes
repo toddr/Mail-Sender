@@ -141,3 +141,14 @@ Version 0.8.06 - 03/24/2003
  - new Mail::Sender ({..., on_errors => 'undef'});
  - new Mail::Sender ({..., on_errors => 'code'});
  - A small fix for an issue with nested parts on the courier-imap server (whatever it is).
+
+Version 0.8.08
+	- fixed an error in SendEx() causing problems with qmail
+		(thanks to report&help from "Luciano Bueno " <lbueno@grupoaraucaria.com.ar>)
+	- added debugging levels
+	- added an option that tells Mail::Sender to ignore rejected recipients
+	- you can now overwrite the message-id generation function
+	- added two addins improving the content type guesswork
+	- added TestServer method/function
+	- improved handling of the last newline in quoted-printable encoded parts
+	  (the Outlook problem with = appearing at the end of attached files)

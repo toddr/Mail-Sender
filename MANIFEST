@@ -5,3 +5,5 @@ MANIFEST
 README
 Sender.pm
 test.pl
+Sender/CType/Ext.pm
+Sender/CType/Win32.pm

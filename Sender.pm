@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.8.06
+# Mail::Sender.pm version 0.8.08
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.06';
+$Mail::Sender::VERSION = '0.8.08';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
@@ -36,7 +36,7 @@ use MIME::QuotedPrint;
 					# messages you may comment out these lines.
                     #MIME::Base64 and MIME::QuotedPrint may be found at CPAN.
 
-# include config file :
+# include config file and libraries when packaging the script
 if (0) {
 	require 'Mail/Sender.config'; 	# local configuration
 	require 'Symbol.pm'; 			# for debuging and GetHandle() method
@@ -44,7 +44,7 @@ if (0) {
 	require 'IO/Handle.pm';	# for debuging and GetHandle() method
 	require 'Digest/HMAC_MD5.pm'; # for CRAM-MD5 authentication only
 	require 'Authen/NTLM.pm'; # for NTLM authentication only
-} # this block above is there to let PerlApp, Perl2Exe and PerlCtrl know I need those files.
+} # this block above is there to let PAR, PerlApp, PerlCtrl, PerlSvc and Perl2Exe know I may need those files.
 
 BEGIN {
     my $config = $INC{'Mail/Sender.pm'};
@@ -344,7 +344,11 @@ sub SERVNOTAVAIL {
 
 sub COMMERROR {
 	$!=5;
-	$Mail::Sender::Error="Server error: $_[0]";
+	if ($_[0] eq '') {
+		$Mail::Sender::Error="No response from server";
+	} else {
+		$Mail::Sender::Error="Server error: $_[0]";
+	}
 	return -5, $Mail::Sender::Error;
 }
 
@@ -433,8 +437,14 @@ sub UNKNOWNAUTH {
 	return -19, $Mail::Sender::Error;
 }
 
+sub ALLRECIPIENTSBAD {
+	$!=2;
+	return -20, $Mail::Sender::Error;
+}
+
 @Mail::Sender::Errors = (
 	'OK',
+	'all recipients have been rejected',
 	'authentication protocol is not implemented',
 	'login not accepted',
 	'authentication protocol not accepted by the server',
@@ -460,7 +470,7 @@ sub UNKNOWNAUTH {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.06
+Version 0.8.08
 
 =head1 SYNOPSIS
 
@@ -632,7 +642,7 @@ C<>=> whether you request reading or delivery confirmations and to what addresse
 	...
 
 Keep in mind though that neither of those is guaranteed to work. Some servers/mail clients do not support
-this feature and some users/admins may have disabled it. So it's possible that your mai was delivered and read,
+this feature and some users/admins may have disabled it. So it's possible that your mail was delivered and read,
 but you wount get any confirmation!
 
 =item debug
@@ -650,6 +660,25 @@ C<>=> $FH
 All the conversation with the server will be logged to that file or handle.
 All lines in the file should end with CRLF (the Windows and Internet format).
 If even a single one of them does not, please let me know!
+
+If you pass the path to the log file, Mail::Sender will overwrite it. If you want to append to the file,
+you have to open it yourself and pass the filehandle:
+
+	open my $DEBUG, ">> /path/to/debug/file.txt"
+		or die "Can't open the debug file: $!\n"
+	$sender = new Mail::Sender ({
+		...
+		debug => $DEBUG,
+	});
+
+=item debug_level
+
+Only taken into account if the C<debug> option is specified.
+
+	1 - only log the conversation with the server, skip all message data
+	2 - log the conversation and message headers
+	3 - log the conversation and the message and part headers
+	4 - log everything (default)
 
 =item auth
 
@@ -685,6 +714,22 @@ The connection will be closed if you call the Close() method with a true value o
 OpenMultipart, MailMsg or MailFile with the "smtp" parameter.
 This means that if you want the object to keep the connection you should pass the "smtp" either to "new Mail::Sender"
 or only to the first Open, OpenMultipart, MailMsg or MailFile!
+
+=item skip_bad_recipients
+
+If this option is set to false or not specified then Mail::Sender stops trying to send a message as soon as
+the first recipient's address fails. If it is set to a true value Mail::Sender skips the bad addresses and tries
+to send the message at least to the good ones. If all addresses are rejected by the server it reports an
+"All recipients were rejected" message.
+
+If any addresses were skipped the C<$sender-E<lt>{'skipped_recipients'}> will be a reference to a hash
+containing the failed address and the server's response.
+
+=item createmessageid
+
+This option allows you to overwrite the function that generates the message IDs for the emails.
+The function gets the "pure" sender's address as it's only parameter and is supposed to return a string.
+See the MessageID subroutine in Mail::Sender.pm.
 
 =item	on_errors
 
@@ -781,7 +826,9 @@ sub initialize {
 	$self->{'fromaddr'} = $self->{'from'};
 	$self->{'replyaddr'} = $self->{'reply'};
 
-	for ($self->{'to'}, $self->{'cc'}, $self->{'bcc'}) {next unless defined; s/\s+/ /g;s/,,/,/g;}
+	$self->_prepare_addresses('to') if defined $self->{'to'};
+	$self->_prepare_addresses('cc') if defined $self->{'cc'};
+	$self->_prepare_addresses('bcc') if defined $self->{'bcc'};
 
 	$self->{'fromaddr'} =~ s/.*<([^\s]*?)>/$1/ if ($self->{'fromaddr'}); # get from email address
 	if (defined $self->{'replyaddr'} and $self->{'replyaddr'}) {
@@ -812,23 +859,23 @@ sub initialize {
 
 use vars qw(%CTypes);
 %CTypes = (
-	gif => 'image/gif',
-	jpe => 'image/jpeg',
-	jpeg => 'image/jpeg',
-	shtml => 'text/html',
-	shtm => 'text/html',
-	html => 'text/html',
-	htm => 'text/html',
-	txt => 'text/plain',
-	ini => 'text/plain',
-	doc => 'application/x-msword',
-	eml => 'message/rfc822',
+	GIF => 'image/gif',
+	JPE => 'image/jpeg',
+	JPEG => 'image/jpeg',
+	SHTML => 'text/html',
+	SHTM => 'text/html',
+	HTML => 'text/html',
+	HTM => 'text/html',
+	TXT => 'text/plain',
+	INI => 'text/plain',
+	DOC => 'application/x-msword',
+	EML => 'message/rfc822',
 );
 
 sub GuessCType {
 	my $ext = shift;
 	$ext =~ s/^.*\.//;
-	return $CTypes{lc $ext} || 'application/octet-stream';
+	return $CTypes{uc $ext} || 'application/octet-stream';
 }
 
 sub Connect {
@@ -853,6 +900,7 @@ sub Connect {
 
 	if ($self->{'debug'}) {
 		$s = __Debug( $s, $self->{'debug'});
+		$self->{'debug_level'} = 4 unless defined $self->{'debug_level'};
 	}
 
 	$_ = get_response($s); if (not $_ or !/^[123]/) { return $self->Error(SERVNOTAVAIL($_)); }
@@ -876,6 +924,7 @@ sub Error {
 	if (@_) {
 		if (defined $self->{'socket'}) {
 			my $s = $self->{'socket'};
+			print $s "quit\x0D\x0A";
 			close $s;
 			delete $self->{'socket'};
 		}
@@ -891,6 +940,24 @@ sub Error {
 	}
 }
 
+sub ClearErrors {
+	my $self = shift();
+	delete $self->{'error'};
+	delete $self->{'error_msg'};
+	undef $Mail::Sender::Error;
+}
+
+sub _prepare_addresses {
+	my ($self, $type) = @_;
+	if (ref $self->{$type}) {
+		$self->{$type.'_list'} = $self->{$type};
+		$self->{$type} = join ', ', $self->{$type.'_list'};
+	} else {
+		$self->{$type} =~ s/\s+/ /g;
+		$self->{$type} =~ s/,,/,/g;
+		$self->{$type.'_list'} = [map {s/\s+$//;$_} $self->{$type} =~ /((?:[^"',]+|"[^"]*"|'[^']*')+)(?:,\s*|\s*$)/g];
+	}
+}
 
 =head1 METHODS
 
@@ -904,6 +971,13 @@ Opens a new message. If some parameters are unspecified or empty, it uses
 the parameters passed to the "C<$Sender=new Mail::Sender(...)>";
 
 See C<new Mail::Sender> for info about the parameters.
+The only additional parameter that may not be specified directly in the C<new Mail::Sender>
+is messageid. If you set this option then the message will be sent with this Message-ID,
+otherwise a new Message ID will be generated out of the sender's address, current date+time
+and a random number (or by the function you specified in the C<createmessageid> option).
+
+After the message is sent C<$sender-E<lt>{messageid}> will contain the Message-ID with
+which the message was sent.
 
 Returns ref to the Mail::Sender object if successfull.
 
@@ -913,7 +987,7 @@ sub Open {
 		undef $Mail::Sender::Error;
 	my $self = shift;
 	local $_;
-	if (!$self->{'keepconnection'} and $self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
+	if (!$self->{'keepconnection'} and $self->{'_data'}) { # the user did not Close() or Cancel() the previous mail
 		if ($self->{'error'}) {
 			$self->Cancel;
 		} else {
@@ -923,6 +997,7 @@ sub Open {
 
 	delete $self->{'error'};
 	delete $self->{'encoding'};
+	delete $self->{'messageid'};
 	my %changed;
 	$self->{'multipart'}=0;
 
@@ -945,18 +1020,9 @@ sub Open {
 		if ($headers) {$self->{'headers'}=$headers;$changed{'headers'}=1;}
 	}
 
-	if ($changed{'to'}) {
-		$self->{'to'} =~ s/\s+/ /g;
-		$self->{'to'} =~ s/,,/,/g;
-	}
-	if ($changed{'cc'}) {
-		$self->{'cc'} =~ s/\s+/ /g;
-		$self->{'cc'} =~ s/,,/,/g;
-	}
-	if ($changed{'bcc'}) {
-		$self->{'bcc'} =~ s/\s+/ /g;
-		$self->{'bcc'} =~ s/,,/,/g;
-	}
+	$self->_prepare_addresses('to') if $changed{'to'};
+	$self->_prepare_addresses('cc') if $changed{'cc'};
+	$self->_prepare_addresses('bcc') if $changed{'bcc'};
 
 	$self->{'boundary'} =~ tr/=/-/ if defined $changed{'boundary'};
 
@@ -1010,18 +1076,44 @@ sub Open {
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
 
 	{ local $^W;
-		foreach my $addr (split(/, */, $self->{'to'}),split(/, */, $self->{'cc'}),split(/, */, $self->{'bcc'})) {
-			if ($addr =~ /<(.*)>/) {
-				$_ = send_cmd $s, "rcpt to: <$1>";
-			} else {
-				$_ = send_cmd $s, "rcpt to: <$addr>";
+		if ($self->{'skip_bad_recipients'}) {
+			my $good_count = 0;
+			my %failed;
+			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
+				if ($addr =~ /<(.*)>/) {
+					$_ = send_cmd $s, "rcpt to: <$1>";
+				} else {
+					$_ = send_cmd $s, "rcpt to: <$addr>";
+				}
+				if (!/^[123]/) {
+					chomp;
+					s/^\d{3} //;
+					$failed{$addr} = $_;
+				} else {
+					$good_count++
+				}
 			}
-			if (!/^[123]/) { return $self->Error(USERUNKNOWN($addr, $self->{'smtp'})); }
+			$self->{'skipped_recipients'} = \%failed
+				if %failed;
+			if ($good_count == 0) {
+				return $self->Error(ALLRECIPIENTSBAD);
+			}
+		} else {
+			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
+				if ($addr =~ /<(.*)>/) {
+					$_ = send_cmd $s, "rcpt to: <$1>";
+				} else {
+					$_ = send_cmd $s, "rcpt to: <$addr>";
+				}
+				if (!/^[123]/) { return $self->Error(USERUNKNOWN($addr, $self->{'smtp'})); }
+			}
 		}
 	}
 
 	$_ = send_cmd $s, "data";
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
+
+	$self->{'socket'}->stop_logging("\x0D\x0A... message headers and data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} <= 1);
 	$self->{'_data'} = 1;
 
 	$self->{'ctype'} = 'text/plain' if (defined $self->{'charset'} and !defined $self->{'ctype'});
@@ -1083,8 +1175,16 @@ sub Open {
 		print_hdr $s, "X-Mailer" => qq{Perl script "$script"\r\n\tusing Mail::Sender $Mail::Sender::ver by Jenda Krynicky, Czechlands\r\n\trunning on $local_name ($local_IP)\r\n\tunder account "}.getlogin().qq{"\r\n}
 	}
 
-	print_hdr $s, "Message-ID" => MessageID($self->{'fromaddr'})
-		unless defined $Mail::Sender::NO_MESSAGE_ID;
+	unless (defined $Mail::Sender::NO_MESSAGE_ID and $Mail::Sender::NO_MESSAGE_ID) {
+		if (!defined $self->{'messageid'} or $self->{'messageid'} eq '') {
+			if (defined $self->{'createmessageid'} and ref $self->{'createmessageid'} eq 'CODE') {
+				$self->{'messageid'} = $self->{'createmessageid'}->($self->{'fromaddr'});
+			} else {
+				$self->{'messageid'} = MessageID($self->{'fromaddr'});
+			}
+		}
+		print_hdr $s, "Message-ID" => $self->{'messageid'};
+	}
 
 	print $s $Mail::Sender::SITE_HEADERS,"\x0D\x0A"
 		if (defined $Mail::Sender::SITE_HEADERS);
@@ -1093,6 +1193,8 @@ sub Open {
 	print $s $headers,"\r\n" if defined $headers;
 
 	print $s "\r\n";
+
+	$self->{'socket'}->stop_logging("... message data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} <= 2);
 
 	return $self;
 }
@@ -1116,7 +1218,7 @@ sub OpenMultipart {
 	my $self = shift;
 
 	local $_;
-	if (!$self->{'keepconnection'} and $self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
+	if (!$self->{'keepconnection'} and $self->{'_data'}) { # the user did not Close() or Cancel() the previous mail
 		if ($self->{'error'}) {
 			$self->Cancel;
 		} else {
@@ -1126,6 +1228,7 @@ sub OpenMultipart {
 
 	delete $self->{'error'};
 	delete $self->{'encoding'};
+	delete $self->{'messageid'};
 	$self->{'part'} = 0;
 
 	my %changed;
@@ -1157,15 +1260,9 @@ sub OpenMultipart {
 		if ($boundary) {$self->{'boundary'}=$boundary;}
 	}
 
-	if ($changed{'to'}) {
-		for ($self->{'to'}) {s/\s+/ /g;s/, ?,/,/g;}
-	}
-	if ($changed{'cc'}) {
-		for ($self->{'cc'}) {s/\s+/ /g;s/, ?,/,/g;}
-	}
-	if ($changed{'bcc'}) {
-		for ($self->{'bcc'}) {s/\s+/ /g;s/, ?,/,/g;}
-	}
+	$self->_prepare_addresses('to') if $changed{'to'};
+	$self->_prepare_addresses('cc') if $changed{'cc'};
+	$self->_prepare_addresses('bcc') if $changed{'bcc'};
 	$self->{'boundary'} =~ tr/=/-/ if $changed{'boundary'};
 
 	if ($changed{'headers'}) {
@@ -1216,18 +1313,45 @@ sub OpenMultipart {
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
 
 	{ local $^W;
-		foreach my $addr (split(/, */, $self->{'to'}),split(/, */, $self->{'cc'}),split(/, */, $self->{'bcc'})) {
-			if ($addr =~ /<(.*)>/) {
-				$_ = send_cmd $s, "rcpt to: <$1>";
-			} else {
-				$_ = send_cmd $s, "rcpt to: <$addr>";
+		if ($self->{'skip_bad_recipients'}) {
+			my $good_count = 0;
+			my %failed;
+			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
+				if ($addr =~ /<(.*)>/) {
+					$_ = send_cmd $s, "rcpt to: <$1>";
+				} else {
+					$_ = send_cmd $s, "rcpt to: <$addr>";
+				}
+				if (!/^[123]/) {
+					s/^\d{3} //;
+					$failed{$addr} = $_;
+				} else {
+					$good_count++
+				}
 			}
-			if (!/^[123]/) { return $self->Error(USERUNKNOWN($addr, $self->{'smtp'})); }
+			$self->{'skipped_recipients'} = \%failed
+				if %failed;
+			if ($good_count == 0) {
+				return $self->Error(ALLRECIPIENTSBAD);
+			}
+		} else {
+			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
+				if ($addr =~ /<(.*)>/) {
+					$_ = send_cmd $s, "rcpt to: <$1>";
+				} else {
+					$_ = send_cmd $s, "rcpt to: <$addr>";
+				}
+				if (!/^[123]/) {
+					return $self->Error(USERUNKNOWN($addr, $self->{'smtp'}));
+				}
+			}
 		}
 	}
 
 	$_ = send_cmd $s, "data";
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
+
+	$self->{'socket'}->stop_logging("\x0D\x0A... message headers and data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} <= 1);
 	$self->{'_data'} = 1;
 
 	print_hdr $s, "To" => (defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'});
@@ -1271,13 +1395,24 @@ sub OpenMultipart {
 	print $s $Mail::Sender::SITE_HEADERS,"\r\n"
 		if (defined $Mail::Sender::SITE_HEADERS);
 
-	print_hdr $s, "Message-ID", MessageID($self->{'fromaddr'})
-		unless defined $Mail::Sender::NO_MESSAGE_ID and $Mail::Sender::NO_MESSAGE_ID;
+	unless (defined $Mail::Sender::NO_MESSAGE_ID and $Mail::Sender::NO_MESSAGE_ID) {
+		if (!defined $self->{'messageid'} or $self->{'messageid'} eq '') {
+			if (defined $self->{'createmessageid'} and ref $self->{'createmessageid'} eq 'CODE') {
+				$self->{'messageid'} = $self->{'createmessageid'}->($self->{'fromaddr'});
+			} else {
+				$self->{'messageid'} = MessageID($self->{'fromaddr'});
+			}
+		}
+		print_hdr $s, "Message-ID" => $self->{'messageid'};
+	}
 
 	print $s $self->{'headers'},"\r\n" if defined $self->{'headers'} and $self->{'headers'};
 	print $s "MIME-Version: 1.0\r\n";
 	print_hdr $s, "Content-type", qq{multipart/$self->{'multipart'};\r\n\tboundary="$self->{'boundary'}"};
+
 	print $s "\r\n";
+	$self->{'socket'}->stop_logging("... message data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} <= 2);
+
 	print $s "This message is in MIME format. Since your mail reader does not understand\r\n"
 		. "this format, some or all of this message may not be legible.\r\n"
 		. "\r\n--$self->{'boundary'}\r\n";
@@ -1454,6 +1589,7 @@ sub MailFile {
 		$mychunksize = $chunksize64 if defined $self->{'chunk_size'};
 		while (read $FH, $cnt, $mychunksize) {
 			print $s (&$code($cnt));
+			$self->{'_had_newline'} = ($cnt =~ /[\n\r]$/);
 		}
 		close $FH;
 	}
@@ -1565,6 +1701,7 @@ sub SendEnc {
 			print $s (&$code($str));
 		}
 	} else {
+		$self->{'_had_newline'} = ($_[-1] =~ /[\n\r]$/);
 		print $s (&$code(join('',@_)));
 	}
 	return $self;
@@ -1576,13 +1713,13 @@ sub print;*print = \&SendEnc;
 
  SendLineEnc(@strings)
 
-Prints the strings to the socket. Add the end-of-line character at the end.
+Prints the strings to the socket and adds the end-of-line character at the end.
 Encodes the text using the selected encoding (none/Base64/Quoted-printable).
 
 Do NOT mix up /Send(Line)?(Ex)?/ and /Send(Line)?Enc/! SendEnc does some buffering
 necessary for correct Base64 encoding, and /Send(Ex)?/ is not aware of that!
 
-Usage of /Send(Line)?(Ex)?/ in non 7BIT parts not recommended.
+Usage of /Send(Line)?(Ex)?/ in non xBIT parts not recommended.
 Using C<Send(encode_base64($string))> may work, but more likely it will not!
 In particular if you use several such to create one part,
 the data is very likely to get crippled.
@@ -1617,7 +1754,7 @@ sub SendEx {
 		or return $self->Error(NOTCONNECTED);
 	my $str;my @data = @_;
 	foreach $str (@data) {
-		$str =~ s/(\A|[^\r])\n/$1\r\n/sg;
+		$str =~ s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg;
 		$str =~ s/^\./../mg;
 	}
 	print $s @data;
@@ -1702,6 +1839,10 @@ If not specified, the header is not included.
 The content of the part. You do not have to specify the content here, you may use SendEnc()
 to add content to the part.
 
+=item charset
+
+The charset of the part.
+
 =back
 
 Returns the Mail::Sender object if successfull, negative error code if not.
@@ -1714,7 +1855,7 @@ sub Part {
 	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART); }
 	$self->EndPart();
 
-	my ($description, $ctype, $encoding, $disposition, $content_id, $msg);
+	my ($description, $ctype, $encoding, $disposition, $content_id, $msg, $charset);
 	if (ref $_[0] eq 'HASH') {
 		my $hash=$_[0];
 		$description=$hash->{'description'};
@@ -1723,6 +1864,7 @@ sub Part {
 		$disposition=$hash->{'disposition'};
 		$content_id = $hash->{'content_id'};
 		$msg = $hash->{'msg'};
+		$charset = $hash->{'charset'};
 	} else {
 		($description, $ctype, $encoding, $disposition, $content_id, $msg) = @_;
 	}
@@ -1731,6 +1873,9 @@ sub Part {
 	$disposition = "attachment" unless defined $disposition;
 	$encoding="7BIT" unless defined $encoding;
 	$self->{'encoding'} = $encoding;
+	if (defined $charset and $charset and $ctype !~ /charset=/i) {
+		$ctype .= qq{; charset="$charset"}
+	}
 
 	my $s;
 	$s = $self->{'socket'}
@@ -1746,6 +1891,8 @@ sub Part {
 		$self->{'code'}=\&enc_plain;
 	}
 
+	$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
+
 	if ($ctype =~ m{^multipart/}i) {
 		$self->{'part'}+=2;
 		print $s "Content-Type: $ctype; boundary=\"Part-$self->{'boundary'}_$self->{'part'}\"\r\n\r\n";
@@ -1757,8 +1904,11 @@ sub Part {
 		print $s "Content-disposition: $disposition\r\n" unless $disposition eq '' or uc($disposition) eq 'NONE';
 		print $s "Content-ID: <$content_id>\r\n" if (defined $content_id);
 		print $s "\r\n";
+
+		$self->{'socket'}->stop_logging("... data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} == 3);
 		$self->SendEnc($msg) if defined $msg;
 	}
+
 
 	return $self;
 }
@@ -1789,10 +1939,14 @@ sub Body {
 	my $charset = shift || $hash->{'charset'} || 'US-ASCII';
 	my $encoding = shift || $hash->{'encoding'} || $self->{'encoding'} || '7BIT';
 	my $ctype = shift || $hash->{'ctype'} || $self->{'ctype'} || 'text/plain';
+
+	$ctype .= qq{; charset="$charset"}
+		unless $ctype =~ /charset=/i;
+
 	$self->{'encoding'} = $encoding;
 	$self->{'ctype'} = $ctype;
 
-	$self->Part("Mail message body","$ctype; charset=$charset",
+	$self->Part("Mail message body", $ctype,
 		$encoding, 'inline', undef, $hash->{'msg'});
 	return $self;
 }
@@ -1917,6 +2071,9 @@ sub SendFile {
 		my $name =  basename $file;
 		my $fctype = $ctype ? $ctype : GuessCType $file;
 		$self->{'ctype'} = $fctype;
+
+		$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
+
 		print $s ("Content-type: $fctype; name=\"$name\"\r\n"); # "; type=Unknown"
 
 		if ($description) {print $s ("Content-description: $description\r\n");}
@@ -1938,6 +2095,8 @@ sub SendFile {
 			}
 		}
 		print $s "\r\n";
+
+		$self->{'socket'}->stop_logging("... data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} == 3);
 
 		my $FH = new FileHandle;
 		open $FH, "<$file";
@@ -1977,10 +2136,11 @@ sub EndPart {
 	return unless $self->{'part'};
 	my $end = shift();
 	my $s;
+	my $LN = "\x0D\x0A";
 	$s = $self->{'socket'}
 		or return $self->Error(NOTCONNECTED);
 	# flush the buffer (if it contains anything)
-	if ($self->{'_buffer'}) {
+	if ($self->{'_buffer'}) { # used only for base64
 		my $code = $self->{'code'};
 		if (defined $code) {
 			print $s (&$code($self->{'_buffer'}));
@@ -1989,16 +2149,24 @@ sub EndPart {
 		}
 		delete $self->{'_buffer'};
 	}
-	print $s "=" if $self->{'encoding'} =~ /Quoted[_\-]print/i; # make sure we do not add a newline
+	if ($self->{'_had_newline'}) {
+		$LN = '';
+	} else {
+		print $s "=" if $self->{'encoding'} =~ /Quoted[_\-]print/i; # make sure we do not add a newline
+	}
+
+	$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
+
 	if ($self->{'part'}>1) { # end of a subpart
-		print $s "\r\n--Part-$self->{'boundary'}_$self->{'part'}",
+		print $s "$LN--Part-$self->{'boundary'}_$self->{'part'}",
 			($end ? "--" : ()),
 			"\r\n";
 	} else {
-		print $s "\r\n--$self->{'boundary'}",
+		print $s "$LN--$self->{'boundary'}",
 			($end ? "--" : ()),
 			"\r\n";
 	}
+
 	$self->{'part'}--;
 	$self->{'code'}=\&enc_plain;
 	$self->{'encoding'} = '';
@@ -2017,7 +2185,8 @@ message immediately. And you should not keep it open for hundreds of emails even
 This method should be called automatically when destructing the object, but you should not rely on it. If you want to be sure
 your message WAS processed by the SMTP server you SHOULD call Close() explicitely.
 
-Returns the Mail::Sender object if successfull, negative error code if not.
+Returns the Mail::Sender object if successfull, negative error code if not, zero if $sender was not connected at all.
+The zero usualy means that the Open/OpenMultipart failed and you did not test its return value.
 
 =cut
 
@@ -2028,10 +2197,24 @@ sub Close {
 	return 0 unless $s;
 
 	if ($self->{'_data'}) {
-		while ($self->{'part'}) {
-			$self->EndPart(1);
+		if ($self->{'part'}) {
+			while ($self->{'part'}) {
+				$self->EndPart(1);
+			}
+		} else {
+			# flush the buffer (if it contains anything)
+			if ($self->{'_buffer'}) {
+				my $code = $self->{'code'};
+				if (defined $code) {
+					print $s (&$code($self->{'_buffer'}));
+				} else {
+					print $s ($self->{'_buffer'});
+				}
+				delete $self->{'_buffer'};
+			}
 		}
 
+		$self->{'socket'}->start_logging() if ($self->{'debug'});
 		print $s "\r\n.\r\n" ;
 		$self->{'_data'} = 0;
 		$_ = get_response($s); if (/^[45]\d* (.*)$/) { return $self->Error(TRANSFAILED($1)); }
@@ -2042,6 +2225,7 @@ sub Close {
 
 	if ($_[0] or !$self->{'keepconnection'}) {
 		$_ = send_cmd $s, "quit";
+		if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
 		close $s;
 		delete $self->{'socket'};
 		delete $self->{'debug'};
@@ -2091,7 +2275,6 @@ sub MessageID {
 	return sprintf "<%04d%02d%02d_%02d%02d%02d_%06d.%s>",
 	$year,$mon,$mday,$hour,$min,$sec,rand(100000),
 	$from;
-
 }
 
 =head2 QueryAuthProtocols
@@ -2110,7 +2293,7 @@ sub QueryAuthProtocols {
 	my $self = shift;
 	local $_;
 	if (!defined $self) {
-		croak "Mail::Sender::QueryAuthProtocols() called without the parameter!";
+		croak "Mail::Sender::QueryAuthProtocols() called without any parameter!";
 	} elsif (ref $self) { # $sender->QueryAuthProtocols() or $sender->QueryAuthProtocols('the.server.com)
 		if ($self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
 			die "You forgot to close the mail before calling QueryAuthProtocols!\n"
@@ -2123,7 +2306,7 @@ sub QueryAuthProtocols {
 			$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
 		}
 	} elsif ($self =~ /::/) { # Mail::Sender->QueryAuthProtocols('the.server.com')
-		croak "Mail::Sender->QueryAuthProtocols() called without the parameter!"
+		croak "Mail::Sender->QueryAuthProtocols() called without any parameter!"
 			if ! @_;
 		$self = new Mail::Sender {smtp => $_[0]};
 		return unless ref $self;
@@ -2174,6 +2357,51 @@ sub printAuthProtocols {
 	print "$_[1] supports: ",join(", ", Mail::Sender->QueryAuthProtocols($_[1])),"\n";
 }
 
+sub TestServer {
+	my $self = shift;
+	local $_;
+	if (!defined $self) {
+		croak "Mail::Sender::TestServer() called without any parameter!";
+	} elsif (ref $self) { # $sender->TestServer() or $sender->TestServer('the.server.com)
+		if ($self->{'socket'}) { # the user did not Close() or Cancel() the previous mail
+			die "You forgot to close the mail before calling TestServer!\n"
+		}
+		if (@_) {
+			$self->{'smtp'} = shift();
+			$self->{'smtp'} =~ s/^\s+//g; # remove spaces around $smtp
+			$self->{'smtp'} =~ s/\s+$//g;
+			$self->{'smtpaddr'} = inet_aton($self->{'smtp'});
+			$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
+		}
+		$self->{'on_errors'} = 'die';
+	} elsif ($self =~ /::/) { # Mail::Sender->TestServer('the.server.com')
+		croak "Mail::Sender->TestServer() called without any parameter!"
+			if ! @_;
+		$self = new Mail::Sender {smtp => $_[0], on_errors => 'die'};
+		return unless ref $self;
+	} else { # Mail::Sender::QueryAuthProtocols('the.server.com')
+		$self = new Mail::Sender {smtp => $self, on_errors => 'die'};
+		return unless ref $self;
+	}
+
+	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
+	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
+
+	if (exists $self->{'on_errors'} and (!defined($self->{'on_errors'}) or $self->{'on_errors'} eq 'undef')) {
+		return $self->Connect() and $self->Close() and 1;
+	} elsif (exists $self->{'on_errors'} and $self->{'on_errors'} eq 'die') {
+		$self->Connect();
+		$self->Close();
+		return 1;
+	} else {
+		my $res = $self->Connect();
+		return $res unless ref $res;
+		$res = $self->Close();
+		return $res unless ref $res;
+		return $self;
+	}
+}
+
 #====== Debuging bazmecks
 
 $debug_code = <<'*END*';
@@ -2186,18 +2414,20 @@ sub SOCKET () {0}
 sub LOG () {1}
 sub ENDLINE () {2}
 sub CLOSELOG () {3}
+sub OFF () {4}
 
 sub TIEHANDLE {
 	my ($pkg,$socket,$debughandle, $mayCloseLog) = @_;
-	return bless [$socket,$debughandle,1, $mayCloseLog], $pkg;
+	return bless [$socket,$debughandle,1, $mayCloseLog,0], $pkg;
 }
 
 sub PRINT {
 	my $self = shift;
 	my $text = join(($\ || ''), @_);
 	$self->[SOCKET]->print($text);
+	return if $self->[OFF];
 	$text =~ s/\x0D\x0A(?=.)/\x0D\x0A<< /g;
-	$text = "<< ".$text if $self->[2];
+	$text = "<< ".$text if $self->[ENDLINE];
 	$self->[ENDLINE] = ($text =~ /\x0D\x0A$/);
 	$self->[LOG]->print($text);
 }
@@ -2206,7 +2436,7 @@ sub READLINE {
 	my $self = shift();
 	my $socket = $self->[SOCKET];
 	my $line = <$socket>;
-	$self->[LOG]->print(">> $line") if defined $line;
+	$self->[LOG]->print(">> $line") if defined $line and !$self->[OFF];
 	return $line;
 }
 
@@ -2219,8 +2449,31 @@ sub CLOSE {
 
 sub opened {
 	our $SOCKET;
-	local *SOCKET = $_[0];
+	local *SOCKET = $_[SOCKET];
 	$SOCKET->opened();
+}
+
+use Data::Dumper;
+sub stop_logging {
+	my $self = tied(${$_[0]});
+
+#print "stop_logging( ".$self." )\n";
+
+	return if $self->[OFF];
+	$self->[OFF] = 1;
+
+	my $text = join(($\ || ''), $_[1])
+		or return;
+	$text .= "\x0D\x0A";
+	$text =~ s/\x0D\x0A(?=.)/\x0D\x0A<< /g;
+	$text = "<< ".$text if $self->[ENDLINE];
+	$self->[ENDLINE] = ($text =~ /\x0D\x0A$/);
+	$self->[LOG]->print($text);
+}
+
+sub start_logging {
+	my $self = tied(${$_[0]});
+	$self->[OFF] = 0;
 }
 
 *END*
@@ -2304,7 +2557,15 @@ Currently there are only a few extensions defined, you may add other extensions 
 	$Mail::Sender::CTypes{'ext'} = 'content/type';
 	...
 
-The extension has to be in lowercase and will be matched case insensitively.
+The extension has to be in UPPERCASE and will be matched case sensitively.
+
+The package now includes two addins improving the guesswork. If you "use" one of them in your script,
+it replaces the builtin GuessCType() subroutine with a better one:
+
+	Mail::Sender::CType::Win32
+		Win32 only, the content type is read from the registry
+	Mail::Sender::CType::Ext
+		any OS, a longer list of extensions from A. Guillaume
 
 =head1 CONFIG
 
@@ -2495,12 +2756,12 @@ undef and otherwise it returns a negative error code!
 		cc => 'somebody@somewhere.com',
 		subject => 'Sorry, I\'ll come later.'
 	})
-		or die "Can't open the message: $sender->{error_msg}\n";
+		or die "Can't open the message: $sender->{'error_msg'}\n";
 	$sender->SendLineEnc("I'm sorry, but thanks to the lusers,
 		I'll come at 10pm at best.");
 	$sender->SendLineEnc("\nHi, Jenda");
 	$sender->Close()
-		or die "Failed to send the message: $sender->{error_msg}\n";
+		or die "Failed to send the message: $sender->{'error_msg'}\n";
 
 or
 
@@ -2538,12 +2799,12 @@ or
 		cc => 'somebody@somewhere.com',
 		subject => 'Sorry, I\'ll come later.'
 	})
-		or die "Can't open the message: $sender->{error_msg}\n";
+		or die "Can't open the message: $sender->{'error_msg'}\n";
 	$sender->SendLineEnc("I'm sorry, but thanks to the lusers,
 		I'll come at 10pm at best.");
 	$sender->SendLineEnc("\nHi, Jenda");
 	ref $sender->Close
-		or die "Failed to send the message: $sender->{error_msg}\n";
+		or die "Failed to send the message: $sender->{'error_msg'}\n";
 
 =head2 Using GetHandle()
 
@@ -2938,6 +3199,34 @@ or
  use Mail::Sender;
  print join(', ', Mail::Sender::QueryAuthProtocols('localhost')),"\n";
 
+=head2 FAQ
+
+=head3 Forwarding the messages created by Mail::Sender removes accents. Why?
+
+The most likely colprit is missing or incorrect charset specified for the body or
+a part of the email. You should add something like
+
+	charset => 'iso-8859-1',
+	encoding => 'quoted-printable',
+
+to the parameters passed to Open(), OpenMultipart(), MailMsg(), Body() or Part() or
+
+	b_charset => 'iso-8859-1',
+	b_encoding => 'quoted-printable',
+
+to the parameters for MailFile().
+
+If you use a different charset ('iso-8859-2', 'win-1250', ...) you will of course need
+to specify that charset. If you are not sure, try to send a mail with some other mail client
+and then look at the message/part headers.
+
+=head2 Sometimes there is an equals sign at the end of the message or attached file when
+I open the email in Outlook. What's wrong?
+
+Outlook is. It has (had) a bug in it's quoted printable decoding routines.
+This problem happens only in quoted-printable encoded parts on multipart messages.
+And only if the data in that part do not end with a newline. (This is new in 0.8.08, in older versions
+it happened in all QP encoded parts.)
 
 =head2 WARNING
 

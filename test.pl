@@ -24,6 +24,6 @@ $sender = new Mail::Sender;
 if (ref $sender) {
 	print "ok 2\n";
 } else {
-	print "not ok 2\n\tfailed to create new Mail::Sender object!\n";
+	print "not ok 2\n\tfailed to create a new Mail::Sender object!\n";
 	exit;
 }
