@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.8.03
+# Mail::Sender.pm version 0.8.04
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,14 +11,14 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.03';
+$Mail::Sender::VERSION = '0.8.04';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
 	if ($] >= 5.008) {
 		# fsck, the 5.8 is broken. The binmode() doesn't work for socket()s.
 		require 'open.pm';
-		'open'->import(OUT=>":raw:perlio");
+		'open'->import(OUT=>":raw :perlio");
 	}
 }
 
@@ -77,14 +77,23 @@ my $GMTdiff;
 	my $mindiff;
 	if (abs($gm[1]-$local[1])<5) {
 		$mindiff = 0
-	} elsif (abs($gm[1]-$local[1]-30) <5) {
+	} elsif (abs(abs($gm[1]-$local[1])-30) <5) {
 		$mindiff = 30
-	} elsif (abs($gm[1]-$local[1]-60) <5) {
+	} elsif (abs(abs($gm[1]-$local[1])-60) <5) {
 		$mindiff = 0;
 		$hourdiff ++;
 	}
 	$GMTdiff = ($hourdiff < 0 ? '+' : '-') . sprintf "%02d%02d", abs($hourdiff), $mindiff;
 }
+## you could also use this code by "John W. Krahn" <krahnj@acm.org>
+# use Time::Local
+# {
+#  my $local = time;
+#  my $gm = timelocal( gmtime $local );
+#  my $sign = qw( + + - )[ $local <=> $gm ];
+#  $GMTdiff = sprintf "%s%02d%02d", $sign, (gmtime abs( $local - $gm ))[2,1];
+# }
+
 
 #
 my @priority = ('','1 (Highest)','2 (High)', '3 (Normal)','4 (Low)','5 (Lowest)');
@@ -450,7 +459,7 @@ sub UNKNOWNAUTH {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.03
+Version 0.8.04
 
 =head1 SYNOPSIS
 

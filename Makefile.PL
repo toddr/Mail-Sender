@@ -6,7 +6,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     'NAME'	=> 'Mail::Sender',
-    'PREREQ_PM' => {'MIME::Base64' => 0,'MIME::QuotedPrint' => 0},
+    'PREREQ_PM' => {'MIME::Base64' => 0},
     'VERSION_FROM' => 'Sender.pm', # finds $VERSION
    ($] ge '5.005')
     ? (

@@ -129,4 +129,6 @@ Version 0.8.03 - 12/29/2002
    I use now !/^[123]/ (server reported success) )
  - some documentation fixes and additions
 
-
+Version 0.8.04 - 01/08/2003
+ - fixed typo causing the "Unknown PerlIO layer 'raw:perlio' at .../Mail/Sender.pm line 21"
+ - fixed incorrect handling of halfhour timezones
