@@ -1,6 +1,9 @@
 # Never modify Config.PPM, always Config.PL
 # (Whenever you generate a distribution Config.PPM is overwriten by Config.PL)
 
+# just to tell make we are done with configuring
+open CFG, '>Config';print CFG "\n";close CFG;
+
 use Cwd;
 use FileHandle;
 use Socket;

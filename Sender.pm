@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.09
+# Mail::Sender.pm version 0.7.10
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.09';
+$Mail::Sender::VERSION='0.7.10';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -138,7 +138,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.09
+Version 0.7.10
 
 =head1 SYNOPSIS
 
