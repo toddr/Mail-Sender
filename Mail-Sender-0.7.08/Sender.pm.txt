@@ -2,7 +2,7 @@ NAME
     Mail::Sender - module for sending mails with attachments through
     an SMTP server
 
-    Version 0.7.07
+    Version 0.7.08
 
 SYNOPSIS
      use Mail::Sender;
@@ -511,7 +511,7 @@ EXAMPLES
      ref ($sender = new Mail::Sender({from => 'somebody@somewhere.com',smtp
      => 'ms.chipnet.cz'})) or die "$Mail::Sender::Error\n";
 
-     (ref ($sender->MailMsg({to =>'Jenda@Krynicky.cz', subject => 'this is a test',
+     (ref ($sender->MailMsg({to =>'Jenda@Krynicky.czX', subject => 'this is a test',
                              msg => "Hi Johnie.\nHow are you?"}))
       and print "Mail sent OK."
      )
@@ -653,14 +653,20 @@ DISCLAIMER
 
 AUTHOR
     Jan Krynicky <Jenda@Krynicky.cz>
+    http://Jenda.Krynicky.cz
 
     With help of Rodrigo Siqueira <rodrigo@insite.com.br>, Ed
     McGuigan <itstech1@gate.net>, and others.
 
 COPYRIGHT
-    Copyright (c) 1997-1999 Jan Krynicky <Jenda@Krynicky.cz>. All
+    Copyright (c) 1997-2001 Jan Krynicky <Jenda@Krynicky.cz>. All
     rights reserved.
 
     This program is free software; you can redistribute it and/or
     modify it under the same terms as Perl itself.
+    This program is free software; you can redistribute it and/or
+    modify it under the same terms as Perl itself. There is only 
+    one aditional condition: 
+    You may NOT use this module for SPAMing! NEVER! 
+    (see http://spam.abuse.net/ for definition) 
 

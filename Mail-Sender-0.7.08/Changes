@@ -78,3 +78,6 @@ Version 0.7.07 - 4/4/2001
  bugfix
  Fixed a stupid bug related to multipart messages (have you ever used one hash item 
  for two different purposes? I AM that stupid!)
+
+Version 0.7.08 - 4/10/2001
+ doc fix

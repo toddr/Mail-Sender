@@ -1,6 +1,6 @@
-# Mail::Sender.pm version 0.7.07
+# Mail::Sender.pm version 0.7.08
 #
-# Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
+# Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
 # modify it under the same terms as Perl itself.
 
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.07';
+$Mail::Sender::VERSION='0.7.08';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -138,7 +138,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.07
+Version 0.7.08
 
 =head1 SYNOPSIS
 
@@ -504,7 +504,7 @@ sub Open {
   print $s "Cc: $self->{'cc'}\r\n";
  }
  print $s "Reply-to: $self->{'reply'}\r\n" if defined $self->{'reply'};
- print $s "X-Mailer: Perl Mail::Sender $Mail::Sender::ver Jan Krynicky  http://jenda.krynicky.cz/\r\n" unless defined $Mail::Sender::NO_X_MAILER;
+ print $s "X-Mailer: Perl+Mail::Sender $Mail::Sender::ver by Jan Krynicky\r\n" unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) { print $s $Mail::Sender::SITE_HEADERS,"\r\n" };
  if ($self->{'headers'}) {print $s $self->{'headers'},"\r\n"};
  print $s "Subject: $self->{'subject'}\r\n\r\n";
@@ -645,7 +645,7 @@ sub OpenMultipart {
   print $s "Cc: $self->{'cc'}\r\n";
  }
  print $s "Reply-to: $self->{'reply'}\r\n" if $self->{'reply'};
- print $s "X-Mailer: Perl Mail::Sender $Mail::Sender::ver Jan Krynicky  http://jenda.krynicky.cz/\r\n"  unless defined $Mail::Sender::NO_X_MAILER;
+ print $s "X-Mailer: Perl+Mail::Sender $Mail::Sender::ver by Jan Krynicky\r\n"  unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) {print $s $Mail::Sender::SITE_HEADERS,"\r\n"};
  print $s "Subject: $self->{'subject'}\r\n";
  if ($self->{'headers'}) {print $s $self->{'headers'},"\r\n"};
@@ -1459,7 +1459,7 @@ If everything you need is to send a simple message you may use:
  ref ($sender = new Mail::Sender({from => 'somebody@somewhere.com',smtp
  => 'ms.chipnet.cz'})) or die "$Mail::Sender::Error\n";
 
- (ref ($sender->MailMsg({to =>'Jenda@Krynicky.cz', subject => 'this is a test',
+ (ref ($sender->MailMsg({to =>'Jenda@Krynicky.czX', subject => 'this is a test',
                          msg => "Hi Johnie.\nHow are you?"}))
   and print "Mail sent OK."
  )
@@ -1548,8 +1548,8 @@ If you want to send a mail with an attached file you just got from a HTML form:
   $tmp_file = $query->tmpFileName($filename);
  }
 
- $sender = new Mail::Sender {from => 'script@mccann.cz',smtp => 'mail.mccann.cz'};
- $sender->OpenMultipart({to=> 'jenda@mccann.cz',subject=> 'test CGI attach'});
+ $sender = new Mail::Sender {from => 'script@krynicky.cz',smtp => 'mail.krynicky.czX'};
+ $sender->OpenMultipart({to=> 'jenda@krynicky.czX',subject=> 'test CGI attach'});
  $sender->Body();
  $sender->Send(<<"*END*");
  This is just a test of mail with an uploaded file.
@@ -1600,16 +1600,17 @@ of the poster and it's not mentioned in the script. Thank you mr. C<undef>.
 
 =head1 AUTHOR
 
-Jan Krynicky <Jenda@Krynicky.cz>
+Jan Krynicky <Jenda@Krynicky.cz> 
+http://Jenda.Krynicky.cz
 
 With help of Rodrigo Siqueira <rodrigo@insite.com.br>, Ed McGuigan <itstech1@gate.net>, and others.
 
 =head1 COPYRIGHT
 
-Copyright (c) 1997-1999 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
+Copyright (c) 1997-2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 
 This program is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
+modify it under the same terms as Perl itself. There is only one aditional condition, you may 
+NOT use this module for SPAMing! NEVER! (see http://spam.abuse.net/ for definition) 
 
 =cut
-

@@ -37,7 +37,7 @@ Mail::Sender - module for sending mails with attachments through an SMTP
 server
 
 <P>
-Version 0.7.07
+Version 0.7.08
 
 <P>
 <HR>
@@ -666,7 +666,7 @@ If everything you need is to send a simple message you may use:
  =&gt; 'ms.chipnet.cz'})) or die &quot;$Mail::Sender::Error\n&quot;;
 </PRE>
 <P>
-<PRE> (ref ($sender-&gt;MailMsg({to =&gt;'Jenda@Krynicky.cz', subject =&gt; 'this is a test',
+<PRE> (ref ($sender-&gt;MailMsg({to =&gt;'Jenda@Krynicky.czX', subject =&gt; 'this is a test',
                          msg =&gt; &quot;Hi Johnie.\nHow are you?&quot;}))
   and print &quot;Mail sent OK.&quot;
  )
@@ -772,8 +772,8 @@ form:
  }
 </PRE>
 <P>
-<PRE> $sender = new Mail::Sender {from =&gt; 'script@mccann.cz',smtp =&gt; 'mail.mccann.cz'};
- $sender-&gt;OpenMultipart({to=&gt; 'jenda@mccann.cz',subject=&gt; 'test CGI attach'});
+<PRE> $sender = new Mail::Sender {from =&gt; 'script@krynicky.cz',smtp =&gt; 'mail.krynicky.czX'};
+ $sender-&gt;OpenMultipart({to=&gt; 'jenda@krynicky.czX',subject=&gt; 'test CGI attach'});
  $sender-&gt;Body();
  $sender-&gt;Send(&lt;&lt;&quot;*END*&quot;);
  This is just a test of mail with an uploaded file.
@@ -851,13 +851,16 @@ and others.
 <HR>
 <H1><A NAME="COPYRIGHT">COPYRIGHT</A></H1>
 <P>
-Copyright (c) 1997-1999 Jan Krynicky &lt;<A
-HREF="mailto:Jenda@Krynicky.cz">Jenda@Krynicky.cz</A>&gt; All rights
+Copyright (c) 1997-2001 Jan Krynicky &lt;<A
+HREF="mailto:Jenda@Krynicky.cz">Jenda@Krynicky.cz</A>&gt; 
+<BR> <a href="http://Jenda.Krynicky.cz">http://Jenda.Krynicky.cz</A>
+<BR>All rights
 reserved.
 
 <P>
-This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself.
+This program is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself. There is only one aditional condition, you may 
+NOT use this module for SPAMing! NEVER! (see <A href="http://spam.abuse.net/">http://spam.abuse.net/</a> for definition) 
 
 </BODY>
 
