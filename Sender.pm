@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.14
+# Mail::Sender.pm version 0.7.14.1
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION='0.7.14';
+$Mail::Sender::VERSION='0.7.14.1';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict;
@@ -257,13 +257,13 @@ sub HOSTNOTFOUND {
 }
 
 sub SOCKFAILED {
-	$Mail::Sender::Error='socket() failed: $!';
+	$Mail::Sender::Error='socket() failed: $^E';
 	$!=5;
 	return -2;
 }
 
 sub CONNFAILED {
-	$Mail::Sender::Error="connect() failed: $!";
+	$Mail::Sender::Error="connect() failed: $^E";
 	$!=5;
 	return -3;
 }
@@ -392,7 +392,7 @@ sub UNKNOWNAUTH {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.14
+Version 0.7.14.1
 
 =head1 SYNOPSIS
 
@@ -898,7 +898,7 @@ sub Open {
 
 	unless (defined $Mail::Sender::NO_X_MAILER) {
 		my $script = basename($0);
-		print $s qq{X-Mailer: Perl script "$script"\n\tusing Mail::Sender $Mail::Sender::ver by Jenda Krynicky\r\n\trunning on $local_name ($local_IP)\n\tunder account "}.getlogin().qq{"\r\n}
+		print $s qq{X-Mailer: Perl script "$script"\r\n\tusing Mail::Sender $Mail::Sender::ver by Jenda Krynicky\r\n\trunning on $local_name ($local_IP)\r\n\tunder account "}.getlogin().qq{"\r\n}
 	}
 
 	{
@@ -1088,7 +1088,7 @@ sub OpenMultipart {
 
 	unless (defined $Mail::Sender::NO_X_MAILER) {
 		my $script = basename($0);
-		print $s qq{X-Mailer: Perl script "$script"\n\tusing Mail::Sender $Mail::Sender::ver by Jenda Krynicky\r\n\trunning on $local_name ($local_IP)\n\tunder account "}.getlogin().qq{"\r\n}
+		print $s qq{X-Mailer: Perl script "$script"\r\n\tusing Mail::Sender $Mail::Sender::ver by Jenda Krynicky\r\n\trunning on $local_name ($local_IP)\r\n\tunder account "}.getlogin().qq{"\r\n}
 	}
 
 	if (defined $Mail::Sender::SITE_HEADERS) {print $s $Mail::Sender::SITE_HEADERS,"\r\n"};
