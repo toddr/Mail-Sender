@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.08
+# Mail::Sender.pm version 0.7.09
 #
 # Copyright (c) 2001 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.08';
+$Mail::Sender::VERSION='0.7.09';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -138,7 +138,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.08
+Version 0.7.09
 
 =head1 SYNOPSIS
 
@@ -487,10 +487,10 @@ sub Open {
     $self->{'code'}=\&encode_base64;
     $self->{'chunk_size'} = 57;
    } elsif ($self->{'encoding'} =~ /Quoted[_\-]print/i) {
-    $self->{'code'}=sub {my $s=shift;$s=~s/^\.$/../gm;encode_qp $s};
+    $self->{'code'}=sub {my $s=shift;$s=encode_qp $s;$s=~s/^\./../gm;$s};
    } else {
 #    $self->{'code'}=sub{return $_[0];};
-    $self->{'code'}=sub{my $s = $_[0];$s =~ s/^\.$/../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
+    $self->{'code'}=sub{my $s = $_[0];$s =~ s/^\./../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
    }
   }
   $self->{'headers'} = defined $self->{'headers'} ? $self->{'headers'}."\r\n".$headers : $headers;
@@ -507,6 +507,7 @@ sub Open {
  print $s "X-Mailer: Perl+Mail::Sender $Mail::Sender::ver by Jan Krynicky\r\n" unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) { print $s $Mail::Sender::SITE_HEADERS,"\r\n" };
  if ($self->{'headers'}) {print $s $self->{'headers'},"\r\n"};
+ $self->{'subject'} = "<No subject>" unless defined $self->{'subject'};
  print $s "Subject: $self->{'subject'}\r\n\r\n";
 
  return $self;
@@ -647,6 +648,7 @@ sub OpenMultipart {
  print $s "Reply-to: $self->{'reply'}\r\n" if $self->{'reply'};
  print $s "X-Mailer: Perl+Mail::Sender $Mail::Sender::ver by Jan Krynicky\r\n"  unless defined $Mail::Sender::NO_X_MAILER;
  if (defined $Mail::Sender::SITE_HEADERS) {print $s $Mail::Sender::SITE_HEADERS,"\r\n"};
+ $self->{'subject'} = "<No subject>" unless defined $self->{'subject'};
  print $s "Subject: $self->{'subject'}\r\n";
  if ($self->{'headers'}) {print $s $self->{'headers'},"\r\n"};
  print $s "MIME-Version: 1.0\r\nContent-type: Multipart/$self->{'multipart'};\r\n\tboundary=$self->{'boundary'}";
@@ -1011,10 +1013,10 @@ sub Part {
   $code=\&encode_base64;
   $self->{'chunk_size'} = 57;
  } elsif ($encoding =~ /Quoted[_\-]print/i) {
-  $code=\&encode_qp;
+  $code=sub {my $s=shift;$s=encode_qp $s;$s=~s/^\./../gm;$s};
  } else {
 #  $code=sub{return $_[0];};
-   $code=sub{my $s = $_[0];$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
+   $code=sub{my $s = $_[0];$s =~ s/^\./../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
  }
 
  $self->{'code'}=$code;
@@ -1152,10 +1154,10 @@ sub SendFile {
  if ($encoding =~ /Base64/i) {
   $code=\&encode_base64;
  } elsif ($encoding =~ /Quoted[_\-]print/i) {
-  $code=\&encode_qp;
+  $code=sub {my $s=shift;$s=encode_qp $s;$s=~s/^\./../gm;$s};
  } else {
 #  $code=sub{return $_[0];};
-   $code=sub{my $s = $_[0];$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
+   $code=sub{my $s = $_[0];$s =~ s/^\./../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
  }
  $self->{'code'}=$code;
 
@@ -1334,7 +1336,7 @@ from your server without your users being able to change it you may use
 this hack:
 
  $loginname = something_that_identifies_the_user();
- eval qq{*Mail::Sender::SITE_HEADERS = 'X-Sender: $loginname via $0'};
+ *Mail::Sender::SITE_HEADERS = \"X-Sender: $loginname via $0";
 
 
 You may even "install" your custom function that will be evaluated for
@@ -1566,6 +1568,20 @@ If you want to send a mail with an attached file you just got from a HTML form:
  $sender->Close();
 
  print "Content-type: text/plain\n\nYes, it's sent\n\n";
+
+
+If you want to confirm reading you add :
+
+	headers => "X-Confirm-Reading-To: $from_address"
+
+if you want delivery report you add :
+
+	headers => "Return-receipt-to: $from_address"
+
+if both :
+
+	headers => "X-Confirm-Reading-To: $from_address\nReturn-receipt-to: $from_address"
+
 
 =head2 WARNING
 
