@@ -48,3 +48,13 @@ Version 0.7.00
 Version 0.7.01 - 12/9/1999
  bugfix (qmail would not accept attachments)
 
+Version 0.7.02 - 8/1/19100
+ bugfix
+  Don't tell me I'm stuuupid, I know it. Ever tried to send en email
+  with a line consisting of only a single dot?
+
+Version 0.7.03 - 14/1/19100
+ bugfix
+  Don't tell me I'm stuuupid, I know it. As Jan Starzynski <jan@planet.de>
+  pointed out it ate the last character on each line in SendEx() (Used in SendFile)
+  under Unix. Oh well :-(

@@ -1,4 +1,4 @@
-# Mail::Sender.pm version 0.7.01
+# Mail::Sender.pm version 0.7.04
 #
 # Copyright (c) 1997 Jan Krynicky <Jenda@Krynicky.cz>. All rights reserved.
 # This program is free software; you can redistribute it and/or
@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();   #&new);
 @EXPORT_OK = qw(@error_str);
 
-$Mail::Sender::VERSION='0.7.01';
+$Mail::Sender::VERSION='0.7.04';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 use strict 'vars';
@@ -136,7 +136,7 @@ sub SITEERROR {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.7.01
+Version 0.7.04
 
 =head1 SYNOPSIS
 
@@ -474,10 +474,10 @@ sub Open {
     $self->{'code'}=\&encode_base64;
     $self->{'chunk_size'} = 57;
    } elsif ($self->{'encoding'} =~ /Quoted[_\-]print/i) {
-    $self->{'code'}=\&encode_qp;
+    $self->{'code'}=sub {my $s=shift;$s=~s/^\.$/../gm;encode_qp $s};
    } else {
 #    $self->{'code'}=sub{return $_[0];};
-    $self->{'code'}=sub{my $s = $_[0];$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
+    $self->{'code'}=sub{my $s = $_[0];$s =~ s/^\.$/../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;}; #<???>
    }
   }
   $self->{'headers'} = defined $self->{'headers'} ? $self->{'headers'}."\r\n".$headers : $headers;
@@ -813,7 +813,7 @@ sub SendEnc {
  local $_;
  my $code = $self->{code};
 # return $self->Send(@_) unless defined $code;
- $code=sub{my $s = $_[0];$s =~ s/\x0A/\x0D\x0A/sg;return $s;} #<???>
+ $code=sub{my $s = $_[0];$s =~ s/^\.$/../gm;$s =~ s/\x0A/\x0D\x0A/sg;return $s;} #<???>
   unless defined $code;
  my $s;
  $s = $self->{'socket'};
@@ -879,7 +879,7 @@ sub SendEx {
  $s = $self->{'socket'};
  my $str;my @data = @_;
  foreach $str (@data) {
-  $str =~ s/(?:\A|[^\r])\n/\r\n/sg;
+  $str =~ s/(\A|[^\r])\n/$1\r\n/sg;
  }
  print $s @data;
  return 1;
