@@ -12,6 +12,7 @@ WriteMakefile(
     ? (
      'AUTHOR' => 'Jan Krynicky (Jenda@Krynicky.cz)',
      'ABSTRACT' => 'Send mails with attachments through a SMTP server, socket()s based.',
+	 'LICENSE' => 'Perl'
     )
     : (),
 );

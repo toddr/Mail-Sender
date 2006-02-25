@@ -171,3 +171,16 @@ Version 0.8.10
 	- untaining the IP address of the SMTP server in all cases
 	- fixed a problem that caused rare doubling of dots in quoted-printable encoded parts.
 	- various doc improvements
+
+Version 0.8.11
+	- private
+
+Version 0.8.13 - 02/25/2006
+	- fixed incorrect handling of singlequotes in mail addresses
+	- add SMTP commands now sent in uppercase
+	- removing the port number if the local name is taken from $ENV{HTTP_HOST}
+	- improved getting the current user name
+	- can accept authid and authpwd already encoded to base64
+	- better handling of errors when reading attachments from files and when
+	  opening the debug files
+	- fixed some problems in Content-type header generation
