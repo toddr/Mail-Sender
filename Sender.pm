@@ -11,7 +11,7 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 @EXPORT = qw();
 @EXPORT_OK = qw(@error_str GuessCType);
 
-$Mail::Sender::VERSION = '0.8.13';
+$Mail::Sender::VERSION = '0.8.16';
 $Mail::Sender::ver=$Mail::Sender::VERSION;
 
 BEGIN {
@@ -27,7 +27,7 @@ use warnings;
 no warnings 'uninitialized';
 use Carp;
 use FileHandle;
-use Socket;
+use IO::Socket::INET;
 use File::Basename;
 
 use MIME::Base64;
@@ -68,49 +68,15 @@ my $local_IP =  join('.',unpack('CCCC',(gethostbyname $local_name)[4]));
 
 #time diference to GMT - Windows will not set $ENV{'TZ'}, if you know a better way ...
 my $GMTdiff;
-{
-	my $time = time();
-	my @local = (localtime($time))[2,1,3,4,5]; # hour, minute, mday, month, year; I don't mind year is 1900 based and month 0-11
-	my @gm = (gmtime($time))[2,1,3,4,5];
-	my $diffdate = ($gm[4]*512*32 + $gm[3]*32 + $gm[2]) <=> ($local[4]*512*32 + $local[3]*32 + $local[2]); # I know there are 12 months and 365-366 days. Any bigger numbers work fine as well ;-)
-	if ($diffdate > 0) {$gm[0]+=24}
-	elsif ($diffdate < 0) {$local[0]+=24}
-	my $hourdiff = $local[0]-$gm[0];
-	my $mindiff;
-	if (abs($gm[1]-$local[1])<5) {
-		$mindiff = 0
-	} elsif (abs(abs($gm[1]-$local[1])-30) <5) {
-		if ($gm[1] < $local[1]) {
-			$mindiff = 30;
-		} else {
-			$mindiff = -30;
-		}
-		if ($hourdiff > 0 and $mindiff < 0) {
-			$mindiff = 30;
-			$hourdiff --;
-		} elsif ($hourdiff < 0 and $mindiff > 0) {
-			$mindiff = -30;
-			$hourdiff ++;
-		}
-	} elsif (abs(abs($gm[1]-$local[1])-60) <5) {
-		$mindiff = 0;
-		if ($hourdiff < 0) {
-			$hourdiff ++;
-		} else {
-			$hourdiff --;
-		}
-	}
-	$GMTdiff = (($hourdiff < 0 || $mindiff < 0) ? '-' : '+') . sprintf "%02d%02d", abs($hourdiff), abs($mindiff);
-}
-## you could also use this code by "John W. Krahn" <krahnj@acm.org>
-# use Time::Local
-# {
-#  my $local = time;
-#  my $gm = timelocal( gmtime $local );
-#  my $sign = qw( + + - )[ $local <=> $gm ];
-#  $GMTdiff = sprintf "%s%02d%02d", $sign, (gmtime abs( $local - $gm ))[2,1];
-# }
 
+use Time::Local;
+sub ResetGMTdiff {
+	my $local = time;
+	my $gm = timelocal( gmtime $local );
+	my $sign = qw( + + - )[ $local <=> $gm ];
+	$GMTdiff = sprintf "%s%02d%02d", $sign, (gmtime abs( $local - $gm ))[2,1];
+}
+ResetGMTdiff();
 
 #
 my @priority = ('','1 (Highest)','2 (High)', '3 (Normal)','4 (Low)','5 (Lowest)');
@@ -174,9 +140,16 @@ sub send_cmd ($$) {
 }
 
 sub print_hdr {
-	my ($s, $hdr, $str) = @_;
+	my ($s, $hdr, $str, $charset) = @_;
 	return if !defined $str or $str eq '';
-	$str =~ s/[\x0D\x0A]+$//;
+	$str =~ s/[\x0D\x0A\s]+$//;
+
+	if ($charset && $str =~ /[^[:ascii:]]/) {
+		$str = encode_qp($str);
+		$str =~ s/=\r?\n$//;
+		$str = "=?$charset?Q?" . $str . "?=";
+	}
+
 	$str =~ s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # \n or \r => \r\n
 	$str =~ s/\x0D\x0A([^\t])/\x0D\x0A\t$1/sg;
 	if (length($str)+length($hdr) > 997) { # header too long, max 1000 chars
@@ -188,17 +161,33 @@ sub print_hdr {
 
 sub say_helo {
 	my ($self, $s) = @_;
-	$_ = send_cmd $s, "EHLO $self->{'client'}";
-	if (!/^[123]/) {
-		$_ = send_cmd $s, "HELO $self->{'client'}";
-		if (!/^[123]/) { return $self->Error(COMMERROR($_));}
+	my $res = send_cmd $s, "EHLO $self->{'client'}";
+	if ($res !~  /^[123]/) {
+		$res = send_cmd $s, "HELO $self->{'client'}";
+		if ($res !~ /^[123]/) { return $self->Error(COMMERROR($_));}
 		return;
 	}
 
-	if (/^(?:\d{3} )?AUTH\s+(.*)$/mi) {
-		my @auth = split /\s+/, uc($1);
+	$res =~ s/^.*\n//;
+	$self->{'supports'} = {map {split /\s+/, $_, 2} split /\n/, $res};
+
+	if (exists $self->{'supports'}{AUTH}) {
+		my @auth = split /\s+/, uc($self->{'supports'}{AUTH});
 		$self->{'auth_protocols'} = {map {$_, 1} @auth};
 			# create a hash with accepted authentication protocols
+	}
+
+	$self->{esmtp}{_MAIL_FROM} = '';
+	$self->{esmtp}{_RCPT_TO} = '';
+	if (exists $self->{'supports'}{DSN} and exists $self->{esmtp}) {
+		for (qw(RET ENVID)) {
+			$self->{esmtp}{_MAIL_FROM} .= " $_=$self->{esmtp}{$_}"
+				if $self->{esmtp}{$_} ne '';
+		}
+		for (qw(NOTIFY ORCPT)) {
+			$self->{esmtp}{_RCPT_TO} .= " $_=$self->{esmtp}{$_}"
+				if $self->{esmtp}{$_} ne '';
+		}
 	}
 	return;
 }
@@ -388,7 +377,15 @@ sub COMMERROR {
 
 sub USERUNKNOWN {
 	$!=2;
-	$Mail::Sender::Error="Local user \"$_[0]\" unknown on host \"$_[1]\"";
+	if ($_[2] and $_[2] !~ /Local user/i) {
+		my $err= $_[2];
+		$err =~ s/^\d+\s*//;
+		$err =~ s/\s*$//s;
+		$err ||= "Error";
+		$Mail::Sender::Error="$err for \"$_[0]\" on host \"$_[1]\"";
+	} else {
+		$Mail::Sender::Error="Local user \"$_[0]\" unknown on host \"$_[1]\"";
+	}
 	return -6, $Mail::Sender::Error;
 }
 
@@ -424,7 +421,7 @@ sub FILENOTFOUND {
 
 sub NOTMULTIPART {
 	$!=40;
-	$Mail::Sender::Error="Not available in singlepart mode";
+	$Mail::Sender::Error="$_[0] not available in singlepart mode";
 	return -12, $Mail::Sender::Error;
 }
 
@@ -516,7 +513,7 @@ sub DEBUGFILE {
 
 Mail::Sender - module for sending mails with attachments through an SMTP server
 
-Version 0.8.13
+Version 0.8.16
 
 =head1 SYNOPSIS
 
@@ -608,6 +605,11 @@ to contact directly the adressee's mailserver! That would be slow and buggy,
 your script should only pass the messages to the nearest mail server and leave
 the rest to it. Keep in mind that the recipient's server may be down temporarily.
 
+=item port
+
+C<>=> the TCP/IP port used form the connection. By default getservbyname('smtp', 'tcp')||25.
+You should only need to use this option if your mail server waits on a nonstandard port.
+
 =item subject
 
 C<>=> the subject of the message
@@ -616,7 +618,9 @@ C<>=> the subject of the message
 
 C<>=> the additional headers
 
-You may use this parameter to add custon headers into the message.
+You may use this parameter to add custon headers into the message. The parameter may
+be either a string containing the headers in the right format or a hash containing the headers
+and their values.
 
 =item boundary
 
@@ -690,6 +694,35 @@ C<>=> whether you request reading or delivery confirmations and to what addresse
 Keep in mind though that neither of those is guaranteed to work. Some servers/mail clients do not support
 this feature and some users/admins may have disabled it. So it's possible that your mail was delivered and read,
 but you wount get any confirmation!
+
+=item ESMPT
+
+	ESMTP => {
+		NOTIFY => 'SUCCESS,FAILURE,DELAY',
+		RET => 'HDRS',
+		ORCPT => 'rfc822;my.other@address.com',
+		ENVID => 'iuhsdfobwoe8t237',
+	}
+
+This option contains data for SMTP extensions, for example it allows you to request delivery
+status notifications according to RFC1891.
+
+NOTIFY - to specify the conditions under which a delivery status notification should be generated.
+Should be either "NEVER" or a comma separated list of "SUCCESS", "FAILURE"  and "DELAY".
+
+ORCPT - used to convey the "original" (sender-specified) recipient address
+
+RET - to request that Delivery Status Notifications containing an indication of delivery
+failure either return the entire contents of a message or only the message headers. Must be either
+FULL or HDRS
+
+ENVID - used to propagate an identifier for this message transmission envelope, which is also
+known to the sender and will, if present, be returned in any Delivery Status Notifications  issued
+for this transmission
+
+You do not need to worry about encoding the ORCPT or ENVID parameters.
+
+If the SMTP server you connect to doesn't support this extension, the options will be ignored.
 
 =item debug
 
@@ -866,10 +899,10 @@ sub initialize {
 	if (@_ != 0) {
 		if (ref $_[0] eq 'HASH') {
 			my $hash=$_[0];
-			$hash->{'reply'} = $hash->{'replyto'} if (defined $hash->{'replyto'} and !defined $hash->{'reply'});
 			foreach $key (keys %$hash) {
 				$self->{lc $key}=$hash->{$key};
 			}
+			$self->{'reply'} = $self->{'replyto'} if (defined $self->{'replyto'} and !defined $self->{'reply'});
 		} else {
 			($self->{'from'}, $self->{'reply'}, $self->{'to'}, $self->{'smtp'},
 			$self->{'subject'}, $self->{'headers'}, $self->{'boundary'}
@@ -883,6 +916,8 @@ sub initialize {
 	$self->_prepare_addresses('to') if defined $self->{'to'};
 	$self->_prepare_addresses('cc') if defined $self->{'cc'};
 	$self->_prepare_addresses('bcc') if defined $self->{'bcc'};
+
+	$self->_prepare_ESMTP() if defined $self->{'esmtp'};
 
 	$self->{'fromaddr'} =~ s/.*<([^\s]*?)>/$1/ if ($self->{'fromaddr'}); # get from email address
 	if (defined $self->{'replyaddr'} and $self->{'replyaddr'}) {
@@ -901,11 +936,7 @@ sub initialize {
 
 	$self->{'boundary'} =~ tr/=/-/ if defined $self->{'boundary'};
 
-	for ($self->{'headers'}) {next unless defined;
-		s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # convert all end-of-lines to CRLF
-		s/^(?:\x0D\x0A)+//; # strip leading
-		s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
-	}
+	$self->_prepare_headers() if (exists $self->{'headers'});
 
 	return $self;
 }
@@ -933,23 +964,22 @@ sub GuessCType {
 
 sub Connect {
 	my $self = shift();
-	my $s = FileHandle->new();
 
-	if (!socket($s, AF_INET, SOCK_STREAM, $self->{'proto'})) {
-		return $self->Error(SOCKFAILED);
-	}
+	my $s = IO::Socket::INET->new(
+		PeerHost    => $self->{'smtp'},
+		PeerPort    => $self->{'port'},
+		Proto       => "tcp",
+		Timeout     => ($self->{'timeout'} || 120),
+	) or return $self->Error(CONNFAILED);
 
 	binmode($s)
 		unless ($] >= 5.008);
 
-	$self->{'smtpaddr'} = $1 if ($self->{'smtpaddr'} =~ /(.*)/s); # Untaint
+### <???> Test only!!!
+#binmode($s, ":utf8");
+###
 
-	$self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
-#print join('.', unpack('C*',$self->{'smtpaddr'}))," : $self->{'port'}\n"; # print IP address
-	return $self->Error(CONNFAILED) unless connect($s, $self->{'sin'});
-
-#	binmode($s,  ":raw:perlio");
-	my($oldfh) = select($s); $| = 1; select($oldfh);
+	$s->autoflush(1);
 
 	if ($self->{'debug'}) {
 		eval {
@@ -960,6 +990,7 @@ sub Connect {
 	}
 
 	$_ = get_response($s); if (not $_ or !/^[123]/) { return $self->Error(SERVNOTAVAIL($_)); }
+	$self->{'server'} = substr $_, 4;
 
 	{	my $res = $self->say_helo($s);
 		return $res if $res;
@@ -1015,6 +1046,48 @@ sub _prepare_addresses {
 	}
 }
 
+sub _prepare_ESMTP {
+	my $self = shift;
+	$self->{esmtp} = {%{$self->{esmtp}}}; # make a copy of the hash. Just in case
+
+	$self->{esmtp}{ORCPT} = 'rfc822;' . $self->{esmtp}{ORCPT} if $self->{esmtp}{ORCPT} ne '' and $self->{esmtp}{ORCPT} !~ /;/;
+	for (qw(ENVID ORCPT)) {
+		$self->{esmtp}{$_} = encode_qp($self->{esmtp}{$_})
+#			if $self->{esmtp}{$_} =~ /[\x00-\x20+=\x7E-\xFFFF]/;
+#			if $self->{esmtp}{$_} =~ /[^\x21-\x2A\x2C-\x3C\x3E-\x7E]/; # anything between ! (\x21) and ~ (\x7E) except + and =
+			if $self->{esmtp}{$_} =~ /[^!-~]/; # anything between ! (\x21) and ~ (\x7E)
+	}
+}
+
+sub _prepare_headers {
+	my $self = shift;
+	return unless exists $self->{'headers'};
+	if ($self->{'headers'} eq '') {
+		delete $self->{'headers'};
+		return;
+	}
+	for ($self->{'headers'}) {
+		if (ref($self->{'headers'}) eq 'HASH') {
+			my $headers = '';
+			while ( my ($hdr, $value) = each %{$self->{'headers'}}) {
+				for ($hdr, $value) {
+					s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # convert all end-of-lines to CRLF
+					s/^(?:\x0D\x0A)+//; # strip leading
+					s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
+					s/\x0D\x0A(\S)/\x0D\x0A\t$1/sg;
+				}
+				$headers .= "$hdr: $value\x0D\x0A";
+			}
+			$headers =~ s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
+			$self->{'headers'} = $headers;
+		} elsif (ref($self->{'headers'})) {
+		} else {
+			s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # convert all end-of-lines to CRLF
+			s/^(?:\x0D\x0A)+//; # strip leading
+			s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
+		}
+	}
+}
 =head1 METHODS
 
 
@@ -1064,7 +1137,11 @@ sub Open {
 		my $hash=$_[0];
 		$hash->{'reply'} = $hash->{'replyto'} if (defined $hash->{'replyto'} and !defined $hash->{'reply'});
 		foreach $key (keys %$hash) {
-			$self->{lc $key}=$hash->{$key};
+			if (ref($hash->{$key}) eq 'HASH' and exists $self->{lc $key}) {
+				$self->{lc $key} = { %{$self->{lc $key}}, %{$hash->{$key}} };
+			} else {
+				$self->{lc $key} = $hash->{$key};
+			}
 			$changed{lc $key}=1;
 		}
 	} else {
@@ -1081,6 +1158,8 @@ sub Open {
 	$self->_prepare_addresses('to') if $changed{'to'};
 	$self->_prepare_addresses('cc') if $changed{'cc'};
 	$self->_prepare_addresses('bcc') if $changed{'bcc'};
+
+	$self->_prepare_ESMTP() if defined $changed{'esmtp'};
 
 	$self->{'boundary'} =~ tr/=/-/ if defined $changed{'boundary'};
 
@@ -1110,18 +1189,12 @@ sub Open {
 		}
 	}
 
-	if ($changed{'headers'}) {
-		for ($self->{'headers'}) {next unless defined;
-			s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # convert all end-of-lines to CRLF
-			s/^(?:\x0D\x0A)+//; # strip leading
-			s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
-		}
-	}
+	$self->_prepare_headers() if ($changed{'headers'});
 
 	if (!$self->{'to'}) { return $self->Error(TOEMPTY); }
 
 	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
-	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
+#	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 
 	if ($Mail::Sender::{'SiteHook'} and !$self->SiteHook()) {
 		return defined $self->{'error'} ? $self->{'error'} : $self->{'error'}=&SITEERROR;
@@ -1131,7 +1204,7 @@ sub Open {
 	return $s unless ref $s; # return the error number if we did not get a socket
 	$self->{'socket'} = $s;
 
-	$_ = send_cmd $s, "MAIL FROM: <$self->{'fromaddr'}>";
+	$_ = send_cmd $s, "MAIL FROM:<$self->{'fromaddr'}>$self->{esmtp}{_MAIL_FROM}";
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
 
 	{ local $^W;
@@ -1140,9 +1213,9 @@ sub Open {
 			my %failed;
 			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
 				if ($addr =~ /<(.*)>/) {
-					$_ = send_cmd $s, "RCPT TO: <$1>";
+					$_ = send_cmd $s, "RCPT TO:<$1>$self->{esmtp}{_RCPT_TO}";
 				} else {
-					$_ = send_cmd $s, "RCPT TO: <$addr>";
+					$_ = send_cmd $s, "RCPT TO:<$addr>$self->{esmtp}{_RCPT_TO}";
 				}
 				if (!/^[123]/) {
 					chomp;
@@ -1160,11 +1233,12 @@ sub Open {
 		} else {
 			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
 				if ($addr =~ /<(.*)>/) {
-					$_ = send_cmd $s, "RCPT TO: <$1>";
+					$_ = send_cmd $s, "RCPT TO:<$1>$self->{esmtp}{_RCPT_TO}";
 				} else {
-					$_ = send_cmd $s, "RCPT TO: <$addr>";
+					$_ = send_cmd $s, "RCPT TO:<$addr>$self->{esmtp}{_RCPT_TO}";
 				}
-				if (!/^[123]/) { return $self->Error(USERUNKNOWN($addr, $self->{'smtp'})); }
+				if (!/^[123]/) {
+					return $self->Error(USERUNKNOWN($addr, $self->{'smtp'}, $_)); }
 			}
 		}
 	}
@@ -1196,17 +1270,17 @@ sub Open {
 	}
 	$self->{'code'}=\&enc_plain unless $self->{'code'};
 
-	print_hdr $s, "To" => (defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'});
-	print_hdr $s, "From" => (defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'});
+	print_hdr $s, "To" => (defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'}), $self->{'charset'};
+	print_hdr $s, "From" => (defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'}), $self->{'charset'};
 	if (defined $self->{'fake_cc'} and $self->{'fake_cc'}) {
-		print_hdr $s, "Cc" => $self->{'fake_cc'};
+		print_hdr $s, "Cc" => $self->{'fake_cc'}, $self->{'charset'};
 	} elsif (defined $self->{'cc'} and $self->{'cc'}) {
-		print_hdr $s, "Cc" => $self->{'cc'};
+		print_hdr $s, "Cc" => $self->{'cc'}, $self->{'charset'};
 	}
-	print_hdr $s, "Reply-to", $self->{'reply'} if defined $self->{'reply'};
+	print_hdr $s, "Reply-to", $self->{'reply'},$self->{'charset'} if defined $self->{'reply'};
 
 	$self->{'subject'} = "<No subject>" unless defined $self->{'subject'};
-	print_hdr $s, "Subject" => $self->{'subject'};
+	print_hdr $s, "Subject" => $self->{'subject'}, $self->{'charset'};
 
 	unless (defined $Mail::Sender::NO_DATE and $Mail::Sender::NO_DATE) {
 		my $date = localtime(); $date =~ s/^(\w+)\s+(\w+)\s+(\d+)\s+(\d+:\d+:\d+)\s+(\d+)$/$1, $3 $2 $5 $4/;
@@ -1222,9 +1296,9 @@ sub Open {
 	if ($self->{'confirm'}) {
 		for my $confirm (split /\s*,\s*/, $self->{'confirm'}) {
 			if ($confirm =~ /^\s*reading\s*(?:\:\s*(.*))?/i) {
-				print_hdr $s, "X-Confirm-Reading-To" => ($1 || $self->{'from'});
+				print_hdr $s, "X-Confirm-Reading-To" => ($1 || $self->{'from'}), $self->{'charset'};
 			} elsif ($confirm =~ /^\s*delivery\s*(?:\:\s*(.*))?/i) {
-				print_hdr $s, "Return-receipt-to" => ($1 || $self->{'fromaddr'});
+				print_hdr $s, "Return-receipt-to" => ($1 || $self->{'fromaddr'}), $self->{'charset'};
 			}
 		}
 	}
@@ -1288,7 +1362,7 @@ sub OpenMultipart {
 	delete $self->{'error'};
 	delete $self->{'encoding'};
 	delete $self->{'messageid'};
-	$self->{'part'} = 0;
+	$self->{'_part'} = 0;
 
 	my %changed;
 	if (defined $self->{'type'} and $self->{'type'}) {
@@ -1304,7 +1378,11 @@ sub OpenMultipart {
 		$hash->{'multipart'} = $hash->{'subtype'} if defined $hash->{'subtype'};
 		$hash->{'reply'} = $hash->{'replyto'} if (defined $hash->{'replyto'} and !defined $hash->{'reply'});
 		foreach $key (keys %$hash) {
-			$self->{lc $key}=$hash->{$key};
+			if ((ref($hash->{$key}) eq 'HASH') and exists($self->{lc $key})) {
+				$self->{lc $key} = { %{$self->{lc $key}}, %{$hash->{$key}} };
+			} else {
+				$self->{lc $key} = $hash->{$key};
+			}
 			$changed{lc $key}=1;
 		}
 	} else {
@@ -1322,15 +1400,12 @@ sub OpenMultipart {
 	$self->_prepare_addresses('to') if $changed{'to'};
 	$self->_prepare_addresses('cc') if $changed{'cc'};
 	$self->_prepare_addresses('bcc') if $changed{'bcc'};
+
+	$self->_prepare_ESMTP() if defined $changed{'esmtp'};
+
 	$self->{'boundary'} =~ tr/=/-/ if $changed{'boundary'};
 
-	if ($changed{'headers'}) {
-		for ($self->{'headers'}) {next unless defined;
-			s/(?:\x0D\x0A?|\x0A)/\x0D\x0A/sg; # convert all end-of-lines to CRLF
-			s/^(?:\x0D\x0A)+//; # strip leading
-			s/(?:\x0D\x0A)+$//;	# and trailing end-of-lines
-		}
-	}
+	$self->_prepare_headers() if ($changed{'headers'});
 
 	return $self->Error( NOFROMSPECIFIED) unless defined $self->{'from'};
 	if ($changed{'from'}) {
@@ -1360,7 +1435,7 @@ sub OpenMultipart {
 	if (!$self->{'to'}) { return $self->Error(TOEMPTY); }
 
 	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
-	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
+#	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 
 	if ($Mail::Sender::{'SiteHook'} and !$self->SiteHook()) {
 		return defined $self->{'error'} ? $self->{'error'} : $self->{'error'}=&SITEERROR;
@@ -1370,7 +1445,7 @@ sub OpenMultipart {
 	return $s unless ref $s; # return the error number if we did not get a socket
 	$self->{'socket'} = $s;
 
-	$_ = send_cmd $s, "MAIL FROM: <$self->{'fromaddr'}>";
+	$_ = send_cmd $s, "MAIL FROM:<$self->{'fromaddr'}>$self->{esmtp}{_MAIL_FROM}";
 	if (!/^[123]/) { return $self->Error(COMMERROR($_)); }
 
 	{ local $^W;
@@ -1379,9 +1454,9 @@ sub OpenMultipart {
 			my %failed;
 			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
 				if ($addr =~ /<(.*)>/) {
-					$_ = send_cmd $s, "RCPT TO: <$1>";
+					$_ = send_cmd $s, "RCPT TO:<$1>$self->{esmtp}{_RCPT_TO}";
 				} else {
-					$_ = send_cmd $s, "RCPT TO: <$addr>";
+					$_ = send_cmd $s, "RCPT TO:<$addr>$self->{esmtp}{_RCPT_TO}";
 				}
 				if (!/^[123]/) {
 					s/^\d{3} //;
@@ -1398,12 +1473,12 @@ sub OpenMultipart {
 		} else {
 			foreach my $addr ( @{$self->{'to_list'}}, @{$self->{'cc_list'}}, @{$self->{'bcc_list'}}) {
 				if ($addr =~ /<(.*)>/) {
-					$_ = send_cmd $s, "RCPT TO: <$1>";
+					$_ = send_cmd $s, "RCPT TO:<$1>$self->{esmtp}{_RCPT_TO}";
 				} else {
-					$_ = send_cmd $s, "RCPT TO: <$addr>";
+					$_ = send_cmd $s, "RCPT TO:<$addr>$self->{esmtp}{_RCPT_TO}";
 				}
 				if (!/^[123]/) {
-					return $self->Error(USERUNKNOWN($addr, $self->{'smtp'}));
+					return $self->Error(USERUNKNOWN($addr, $self->{'smtp'}, $_));
 				}
 			}
 		}
@@ -1415,21 +1490,21 @@ sub OpenMultipart {
 	$self->{'socket'}->stop_logging("\x0D\x0A... message headers and data skipped ...") if ($self->{'debug'} and $self->{'debug_level'} <= 1);
 	$self->{'_data'} = 1;
 
-	print_hdr $s, "To" => (defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'});
-	print_hdr $s, "From" => (defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'});
+	print_hdr $s, "To" => (defined $self->{'fake_to'} ? $self->{'fake_to'} : $self->{'to'}), $self->{'charset'};
+	print_hdr $s, "From" => (defined $self->{'fake_from'} ? $self->{'fake_from'} : $self->{'from'}), $self->{'charset'};
 	if (defined $self->{'fake_cc'} and $self->{'fake_cc'}) {
-		print_hdr $s, "Cc" => $self->{'fake_cc'};
+		print_hdr $s, "Cc" => $self->{'fake_cc'}, $self->{'charset'};
 	} elsif (defined $self->{'cc'} and $self->{'cc'}) {
-		print_hdr $s, "Cc" => $self->{'cc'};
+		print_hdr $s, "Cc" => $self->{'cc'}, $self->{'charset'};
 	}
-	print_hdr $s, "Reply-to" => $self->{'reply'} if defined $self->{'reply'};
+	print_hdr $s, "Reply-to" => $self->{'reply'}, $self->{'charset'} if defined $self->{'reply'};
 
 	$self->{'subject'} = "<No subject>" unless defined $self->{'subject'};
-	print_hdr $s, "Subject" => $self->{'subject'};
+	print_hdr $s, "Subject" => $self->{'subject'}, $self->{'charset'};
 
 	unless (defined $Mail::Sender::NO_DATE and $Mail::Sender::NO_DATE) {
 		my $date = localtime(); $date =~ s/^(\w+)\s+(\w+)\s+(\d+)\s+(\d+:\d+:\d+)\s+(\d+)$/$1, $3 $2 $5 $4/;
-		print_hdr $s, "Date" => "$date $GMTdiff" ;
+		print_hdr $s, "Date" => "$date $GMTdiff";
 	}
 
 	if ($self->{'priority'}) {
@@ -1441,9 +1516,9 @@ sub OpenMultipart {
 	if ($self->{'confirm'}) {
 		for my $confirm (split /\s*,\s*/, $self->{'confirm'}) {
 			if ($confirm =~ /^\s*reading\s*(?:\:\s*(.*))?/i) {
-				print_hdr $s, "X-Confirm-Reading-To" => ($1 || $self->{'from'});
+				print_hdr $s, "X-Confirm-Reading-To" => ($1 || $self->{'from'}), $self->{'charset'};
 			} elsif ($confirm =~ /^\s*delivery\s*(?:\:\s*(.*))?/i) {
-				print_hdr $s, "Return-receipt-to" => ($1 || $self->{'fromaddr'});
+				print_hdr $s, "Return-receipt-to" => ($1 || $self->{'fromaddr'}), $self->{'charset'};
 			}
 		}
 	}
@@ -1522,7 +1597,6 @@ sub MailMsg {
 	if (ref $_[0] eq 'HASH') {
 		my $hash=$_[0];
 		$msg=$hash->{'msg'};
-		delete $hash->{'msg'}
 	} else {
 		$msg = pop;
 	}
@@ -1575,22 +1649,22 @@ sub MailFile {
 	if (ref $_[0] eq 'HASH') {
 		my $hash = $_[0];
 		$msg = $hash->{'msg'};
-		delete $hash->{'msg'};
+#		delete $hash->{'msg'};
 
 		$file=$hash->{'file'};
-		delete $hash->{'file'};
+#		delete $hash->{'file'};
 
 		$desc=$hash->{'description'}; $haddesc = 1 if defined $desc;
-		delete $hash->{'description'};
+#		delete $hash->{'description'};
 
 		$ctype=$hash->{'ctype'};
-		delete $hash->{'ctype'};
+#		delete $hash->{'ctype'};
 
 		$charset=$hash->{'charset'};
-		delete $hash->{'charset'};
+#		delete $hash->{'charset'};
 
 		$encoding=$hash->{'encoding'};
-		delete $hash->{'encoding'};
+#		delete $hash->{'encoding'};
 
 	} else {
 		$desc=pop if ($#_ >=2); $haddesc = 1 if defined $desc;
@@ -1614,7 +1688,7 @@ sub MailFile {
 	ref $self->OpenMultipart(@_)
 	and
 	ref $self->Body(
-		$self->{'b_charset'},
+		$self->{'b_charset'}||$self->{'charset'},
 		$self->{'b_encoding'},
 		$self->{'b_ctype'}
 	)
@@ -1703,8 +1777,7 @@ Returns the object if successfull.
 
 sub SendLine {
 	my $self = shift;
-	my $s;
-	$s = $self->{'socket'};
+	my $s = $self->{'socket'};
 	print $s (@_,"\x0D\x0A");
 	return $self;
 }
@@ -1915,7 +1988,7 @@ Returns the Mail::Sender object if successfull, negative error code if not.
 sub Part {
 	my $self = shift;
 	local $_;
-	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART); }
+	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART("\$sender->Part()")); }
 	$self->EndPart();
 
 	my ($description, $ctype, $encoding, $disposition, $content_id, $msg, $charset);
@@ -1957,10 +2030,10 @@ sub Part {
 	$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
 
 	if ($ctype =~ m{^multipart/}i) {
-		$self->{'part'}+=2;
-		print $s "Content-Type: $ctype; boundary=\"Part-$self->{'boundary'}_$self->{'part'}\"\r\n\r\n";
+		$self->{'_part'}+=2;
+		print $s "Content-Type: $ctype; boundary=\"Part-$self->{'boundary'}_$self->{'_part'}\"\r\n\r\n";
 	} else {
-		$self->{'part'}++;
+		$self->{'_part'}++;
 		print $s "Content-type: $ctype\r\n";
 		if ($description) {print $s "Content-description: $description\r\n";}
 		print $s "Content-transfer-encoding: $encoding\r\n";
@@ -1991,12 +2064,23 @@ value:
     Body(0,0,'text/html');
 
 Returns the Mail::Sender object if successfull, negative error code if not.
+You should NOT use this method in single part messages, that is, it works after OpenMultipart(),
+but has no meaning after Open()!
 
 =cut
 
 sub Body {
 	my $self = shift;
-	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART); }
+	if (! $self->{'multipart'}) {
+		# ->Body() has no meanin in singlepart messages
+		if (@_) {
+			# they called it with some parameters? Too late for them, let's scream.
+			return $self->Error(NOTMULTIPART("\$sender->Body()"));
+		} else {
+			# $sender->Body() ... OK, let's ignore it.
+			return $self;
+		}
+	}
 	my $hash;
 	$hash = shift() if (ref $_[0] eq 'HASH');
 	my $charset = shift || $hash->{'charset'} || 'US-ASCII';
@@ -2085,7 +2169,7 @@ Returns the Mail::Sender object if successfull, negative error code if not.
 sub SendFile {
 	my $self = shift;
 	local $_;
-	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART); }
+	if (! $self->{'multipart'}) { return $self->Error(NOTMULTIPART("\$sender->SendFile()")); }
 	if (! $self->{'socket'}) { return $self->Error(NOTCONNECTED); }
 
 	my ($description, $ctype, $encoding, $disposition, $file, $content_id, @files);
@@ -2135,7 +2219,7 @@ sub SendFile {
 	$self->{'code'}=$code;
 
 	foreach $file (@files) {
-		$self->EndPart();$self->{'part'}++;
+		$self->EndPart();$self->{'_part'}++;
 		$self->{'encoding'} = $encoding;
 		my $cnt='';
 		my $name =  basename $file;
@@ -2208,7 +2292,7 @@ It's best to always pass to the ->EndPart() the content type of the correspondin
 
 sub EndPart {
 	my $self = shift;
-	return unless $self->{'part'};
+	return unless $self->{'_part'};
 	my $end = shift();
 	my $s;
 	my $LN = "\x0D\x0A";
@@ -2232,8 +2316,8 @@ sub EndPart {
 
 	$self->{'socket'}->start_logging() if ($self->{'debug'} and $self->{'debug_level'} == 3);
 
-	if ($self->{'part'}>1) { # end of a subpart
-		print $s "$LN--Part-$self->{'boundary'}_$self->{'part'}",
+	if ($self->{'_part'}>1) { # end of a subpart
+		print $s "$LN--Part-$self->{'boundary'}_$self->{'_part'}",
 			($end ? "--" : ()),
 			"\r\n";
 	} else {
@@ -2242,7 +2326,7 @@ sub EndPart {
 			"\r\n";
 	}
 
-	$self->{'part'}--;
+	$self->{'_part'}--;
 	$self->{'code'}=\&enc_plain;
 	$self->{'encoding'} = '';
 	return $self;
@@ -2272,20 +2356,20 @@ sub Close {
 	return 0 unless $s;
 
 	if ($self->{'_data'}) {
-		if ($self->{'part'}) {
-			while ($self->{'part'}) {
-				$self->EndPart(1);
+		# flush the buffer (if it contains anything)
+		if ($self->{'_buffer'}) {
+			my $code = $self->{'code'};
+			if (defined $code) {
+				print $s (&$code($self->{'_buffer'}));
+			} else {
+				print $s ($self->{'_buffer'});
 			}
-		} else {
-			# flush the buffer (if it contains anything)
-			if ($self->{'_buffer'}) {
-				my $code = $self->{'code'};
-				if (defined $code) {
-					print $s (&$code($self->{'_buffer'}));
-				} else {
-					print $s ($self->{'_buffer'});
-				}
-				delete $self->{'_buffer'};
+			delete $self->{'_buffer'};
+		}
+
+		if ($self->{'_part'}) {
+			while ($self->{'_part'}) {
+				$self->EndPart(1);
 			}
 		}
 
@@ -2293,6 +2377,7 @@ sub Close {
 		print $s "\r\n.\r\n" ;
 		$self->{'_data'} = 0;
 		$_ = get_response($s); if (/^[45]\d* (.*)$/) { return $self->Error(TRANSFAILED($1)); }
+		$self->{message_response} = $_;
 	}
 
 	delete $self->{'encoding'};
@@ -2392,22 +2477,18 @@ sub QueryAuthProtocols {
 	}
 
 	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
-	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 
-	my $s = FileHandle->new();
-	$self->{'socket'} = $s;
+	my $s = IO::Socket::INET->new(
+		PeerHost    => $self->{'smtp'},
+		PeerPort    => $self->{'port'},
+		Proto       => "tcp",
+		Timeout     => $self->{'timeout'} || 120,
+	) or return $self->Error(CONNFAILED);
 
-	if (!socket($s, AF_INET, SOCK_STREAM, $self->{'proto'})) {
-		return $self->Error(SOCKFAILED);
-	}
-
-	$self->{'sin'} = sockaddr_in($self->{'port'}, $self->{'smtpaddr'});
-	return $self->Error(CONNFAILED) unless connect($s, $self->{'sin'});
-
-	binmode $s
+	binmode($s)
 		unless ($] >= 5.008);
 
-	my($oldfh) = select($s); $| = 1; select($oldfh);
+	$s->autoflush(1);
 
 	$_ = get_response($s); if (not $_ or !/^[123]/) { return $self->Error(SERVNOTAVAIL($_)); }
 	$self->{'server'} = substr $_, 4;
@@ -2415,7 +2496,6 @@ sub QueryAuthProtocols {
 	{	my $res = $self->say_helo($s);
 		return $res if $res;
 	}
-
 
 	$_ = send_cmd $s, "QUIT";
 	close $s;
@@ -2430,7 +2510,7 @@ sub QueryAuthProtocols {
 }
 
 sub printAuthProtocols {
-	print "$_[1] supports: ",join(", ", Mail::Sender->QueryAuthProtocols($_[1])),"\n";
+	print "$_[1] supports: ",join(", ", Mail::Sender->QueryAuthProtocols($_[1] || 'localhost')),"\n";
 }
 
 sub TestServer {
@@ -2462,7 +2542,7 @@ sub TestServer {
 	}
 
 	return $self->Error(NOSERVER) unless defined $self->{'smtp'};
-	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
+#	if (!defined($self->{'smtpaddr'})) { return $self->Error(HOSTNOTFOUND($self->{'smtp'})); }
 
 	if (exists $self->{'on_errors'} and (!defined($self->{'on_errors'}) or $self->{'on_errors'} eq 'undef')) {
 		return $self->Connect() and $self->Close() and 1;
@@ -2563,7 +2643,7 @@ use Tie::Handle;
 
 sub TIEHANDLE {
 	my ($pkg,$sender) = @_;
-	return bless [$sender, $sender->{'Part'}], $pkg;
+	return bless [$sender, $sender->{'_part'}], $pkg;
 }
 
 sub PRINT {
@@ -2644,6 +2724,15 @@ it replaces the builtin GuessCType() subroutine with a better one:
 		Win32 only, the content type is read from the registry
 	Mail::Sender::CType::Ext
 		any OS, a longer list of extensions from A. Guillaume
+
+=head2 ResetGMTdiff
+
+	ResetGMTdiff()
+
+The module computes the local vs. GMT time difference to include in the timestamps
+added into the message headers. As the time difference may change due to summer
+savings time changes you may want to reset the time difference ocassionaly
+in long running programs.
 
 =head1 CONFIG
 
@@ -2775,7 +2864,7 @@ It can access these properties:
 		and read a response from the server
 	$obj->{'authid'} : the username specified in the new Mail::Sender,
 		Open or OpenMultipart call
-	$obj->{'authid'} : the password
+	$obj->{'authpwd'} : the password
 	$obj->{auth...} : all unknown parameters passed to the constructor or the mail
 		opening/creation methods are preserved in the object. If the protocol requires
 		any other options, please use names starting with "auth". Eg. "authdomain", ...
