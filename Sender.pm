@@ -315,7 +315,7 @@ my $debug_code;
 sub __Debug {
 	my ($socket, $file) = @_;
 	if (defined $file) {
-		unless (defined @Mail::Sender::DBIO::ISA) {
+		unless (@Mail::Sender::DBIO::ISA) {
 			eval "use Symbol;";
 			eval $debug_code;
 			die $@ if $@;
@@ -2690,7 +2690,7 @@ You should NOT touch the $sender->{'socket'} unless you really really know what 
 package Mail::Sender;
 sub GetHandle {
 	my $self = shift();
-	unless (defined @Mail::Sender::IO::ISA) {
+	unless (@Mail::Sender::IO::ISA) {
 		eval "use Symbol;";
 		eval $pseudo_handle_code;
 	}
